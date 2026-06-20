@@ -7,7 +7,7 @@ import os
 from datetime import timedelta
 
 # ==================== SOCKET CONFIG ====================
-C2_HOST = '0.0.0.0'
+C2_HOST = '192.168.1.8'
 C2_PORT = 4444
 
 # ==================== DATABASE CONFIG ====================
