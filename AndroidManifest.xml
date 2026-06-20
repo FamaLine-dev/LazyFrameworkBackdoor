@@ -56,7 +56,7 @@
     <!-- Permission untuk Device Admin -->
     <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
     <!-- ==================== BOOT PERMISSION ==================== -->
-<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- ==================== APPLICATION ==================== -->
     <application
         android:allowBackup="true"
