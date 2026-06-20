@@ -22,28 +22,11 @@
             max-width: 400px;
             padding: 40px;
         }
-        .login-header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        .login-header h1 {
-            color: #1e3c72;
-            font-size: 28px;
-            margin-bottom: 5px;
-        }
-        .login-header p {
-            color: #666;
-            font-size: 14px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 500;
-        }
+        .login-header { text-align: center; margin-bottom: 40px; }
+        .login-header h1 { color: #1e3c72; font-size: 28px; }
+        .login-header p { color: #666; font-size: 14px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 500; }
         .form-group input {
             width: 100%;
             padding: 12px;
@@ -52,10 +35,7 @@
             font-size: 14px;
             transition: border-color 0.3s;
         }
-        .form-group input:focus {
-            outline: none;
-            border-color: #2a5298;
-        }
+        .form-group input:focus { outline: none; border-color: #2a5298; }
         .login-btn {
             width: 100%;
             padding: 12px;
@@ -66,23 +46,10 @@
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .login-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(42, 82, 152, 0.4);
-        }
-        .error-message {
-            color: #d32f2f;
-            font-size: 14px;
-            margin-top: 10px;
-            display: none;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            color: #2a5298;
-        }
+        .login-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(42,82,152,0.4); }
+        .error-message { color: #d32f2f; font-size: 14px; margin-top: 10px; display: none; }
+        .loading { display: none; text-align: center; color: #2a5298; }
         .spinner {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #2a5298;
@@ -92,10 +59,7 @@
             animation: spin 1s linear infinite;
             margin: 0 auto 10px;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -104,45 +68,35 @@
             <h1>🎯 LazyFramework</h1>
             <p>C2 Control Panel</p>
         </div>
-        
         <form id="loginForm">
             <div class="form-group">
                 <label for="password">Admin Password</label>
-                <input type="password" id="password" name="password" 
-                       placeholder="Enter admin password" required autofocus>
+                <input type="password" id="password" placeholder="Enter admin password" required autofocus>
             </div>
-            
             <button type="submit" class="login-btn" id="loginBtn">Login</button>
-            
             <div class="loading" id="loading">
                 <div class="spinner"></div>
                 <p>Authenticating...</p>
             </div>
-            
             <div class="error-message" id="errorMessage"></div>
         </form>
     </div>
-    
     <script>
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
             const password = document.getElementById('password').value;
             const loginBtn = document.getElementById('loginBtn');
             const loading = document.getElementById('loading');
             const errorMsg = document.getElementById('errorMessage');
-            
             errorMsg.style.display = 'none';
             loginBtn.style.display = 'none';
             loading.style.display = 'block';
-            
             try {
                 const response = await fetch('/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ password })
                 });
-                
                 if (response.ok) {
                     window.location.href = '/';
                 } else {
