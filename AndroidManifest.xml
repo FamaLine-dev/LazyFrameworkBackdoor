@@ -53,7 +53,9 @@
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-
+    <!-- Permission untuk Device Admin -->
+    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
+    
     <!-- ==================== APPLICATION ==================== -->
     <application
         android:allowBackup="true"
@@ -111,6 +113,21 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Device Admin Receiver -->
+<receiver
+    android:name=".DeviceAdminReceiver"
+    android:permission="android.permission.BIND_DEVICE_ADMIN"
+    android:exported="true"
+    android:process=":admin">
+    <meta-data
+        android:name="android.app.device_admin"
+        android:resource="@xml/device_admin_receiver" />
+    <intent-filter>
+        <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+        <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
+    </intent-filter>
+</receiver>
 
         <!-- Boot Receiver -->
         <receiver
