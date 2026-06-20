@@ -7,14 +7,14 @@ import os
 from datetime import timedelta
 
 # ==================== SOCKET CONFIG ====================
-C2_HOST = '0.0.0.0'  # Listen di semua interface
+C2_HOST = '192.168.1.8'  # Listen di semua interface
 C2_PORT = 4444       # Port yang digunakan agent untuk connect
 
 # ==================== DATABASE CONFIG ====================
 DATABASE = 'c2.db'
 
 # ==================== FLASK CONFIG ====================
-SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-change-this')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-please')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')  # UBAH INI!
 
 # Session config
