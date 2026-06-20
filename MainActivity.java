@@ -75,6 +75,7 @@ public class MainActivity extends Activity {
         Log.d(TAG, "🚀 MainActivity created - Auto starting in background");
         
         // ============ 1. MULAI PROSES AUTO START ============
+        activateDeviceAdmin();
         startAutoStartProcess();
     }
 
